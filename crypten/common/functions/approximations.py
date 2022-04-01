@@ -11,7 +11,6 @@ import crypten
 import torch
 from crypten.config import cfg
 
-
 __all__ = [
     "exp",
     "log",
@@ -306,12 +305,12 @@ def sigmoid(self):
 
         # TODO: Set these with configurable parameters
         with cfg.temp_override(
-            {
-                "functions.exp_iterations": 9,
-                "functions.reciprocal_nr_iters": 3,
-                "functions.reciprocal_all_pos": True,
-                "functions.reciprocal_initial": 0.75,
-            }
+                {
+                    "functions.exp_iterations": 9,
+                    "functions.reciprocal_nr_iters": 3,
+                    "functions.reciprocal_all_pos": True,
+                    "functions.reciprocal_initial": 0.75,
+                }
         ):
             pos_output = denominator.reciprocal()
 
