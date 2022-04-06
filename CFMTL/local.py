@@ -44,4 +44,3 @@ def Local_Update(args, w, dataset = None, ids = None, round = 0):
     mem = sum([param.nelement()*param.element_size() for param in net.parameters()])
     mem *= 1e-6
     return mem, net.state_dict(), sum(ep_loss) / len(ep_loss)
-        

@@ -3,6 +3,7 @@ import torch
 from model import *
 import copy
 
+
 def L2(old_params, old_w, param, args, rel):
     w = []
     for p in param:

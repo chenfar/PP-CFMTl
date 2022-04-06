@@ -22,6 +22,10 @@ def Cluster(group, w_local, args):
     for i in range(len(group)):
         new_groups[clusters[i] - 1].append(group[i])
     X_groups = []
+
+    one_hot = []
+
+
     for i in range(max(clusters)):
         new_w_local = []
         X_local = []
