@@ -1,12 +1,11 @@
 # cluster的输入包括所有客户端中上传的梯度参数，客户端index都是秘密共享的形式
 
-import time
-
 import crypten
 import torch
 import numpy as np
 
 from crypten.mpc import run_multiprocess
+from utils import *
 
 
 def _getname(i, j):
@@ -15,40 +14,41 @@ def _getname(i, j):
     return str(t[0]) + '-' + str(t[1])
 
 
-def _clusters(group, w_local, args):
-    # w_local_sharing=ArithmeticSharedTensor(w_local,precision=0)
-    X = []
-    for i in range(len(w_local)):
-        tmp = []
-        for k in w_local[i].keys():
-            tmp.append(w_local[i][k].flatten())
-        X.append(crypten.cat(tmp))
-    distance_matrix = [[0 for j in range(args.num_clients)] for i in range(args.num_clients)]
-    print(f"begin to compute distance, client num {args.num_clients}")
-    for i in range(0, args.num_clients):
-        for j in range(i, args.num_clients):
-            tmp = (X[i] - X[j]) * (X[i] - X[j])
-            distance_matrix[i][j] = tmp.sqrt()
-    print("distance compute over.....")
-
+def _euclidean_dist(X, num_c):
     clusterDistance = dict()
-    clusterMap = dict()
-    clusterCount = args.num_clients - 1
-    for i in range(0, args.num_clients - 1):
-        for j in range(i, args.num_clients):
+    print(f"begin to compute distance, client num {num_c}")
+    for i in range(0, num_c - 1):
+        for j in range(i + 1, num_c):
             name = _getname(i, j)
-            clusterDistance[name] = distance_matrix[i][j]
+            clusterDistance[name] = (X[i] - X[j]).square().sum().sqrt()
+
+    print("distance compute over.....")
+    return clusterDistance
+
+
+def _clusters(group, w_local, args):
+    # 初始化工作
+    # 1.计算距离的map
+    X = flatten(w_local)
+    clusterDistance = _euclidean_dist(X, args.num_clients)
+    # 2，初始化集群大小的map
+    clusterSize = dict()
     for k in range(0, args.num_clients):
-        clusterMap[k] = 1
-    clusterIndex = [1 for i in range(len(clusterMap))]
-    clusterpoint = [[] for i in range(len(clusterMap))]
-    for i in range(len(clusterMap)):
+        clusterSize[k] = 1
+
+    clusterLastId = args.num_clients - 1
+
+    clusterIndex = [1 for _ in range(len(clusterSize))]
+    clusterpoint = [[] for _ in range(len(clusterSize))]
+    for i in range(len(clusterSize)):
         clusterpoint[i].append(i)
+
+    # 层次聚类过程
     while True:
-        if len(clusterMap) == args.clust:
+        if len(clusterSize) == args.clust:
             break
         clusterList = []
-        for key in clusterMap:
+        for key in clusterSize:
             clusterList.append(key)
         clusterListLength = len(clusterList)
         now_i = 0
@@ -57,43 +57,79 @@ def _clusters(group, w_local, args):
         for i in range(0, clusterListLength - 1):
             for j in range(i + 1, clusterListLength):
                 name = _getname(clusterList[i], clusterList[j])
-                if (min_distance_val is None or ((min_distance_val > clusterDistance[name]).get_plain_text())[
-                    0] == 1) and clusterIndex[clusterList[i]] == 1 and clusterIndex[clusterList[j]] == 1:
+                if clusterIndex[clusterList[i]] == 1 and clusterIndex[clusterList[j]] == 1 \
+                        and (min_distance_val is None or (
+                        min_distance_val > clusterDistance[name]).get_plain_text().item() == 1):
                     now_i = i
                     now_j = j
                     min_distance_val = clusterDistance[name]
         now_cluster_i = clusterList[now_i]
         now_cluster_j = clusterList[now_j]
-        print(f"chose {now_cluster_i},{now_cluster_j}", )
-        ni = clusterMap[now_cluster_i]
-        nj = clusterMap[now_cluster_j]
+        ni = clusterSize[now_cluster_i]
+        nj = clusterSize[now_cluster_j]
         clusterIndex[now_cluster_i] = 0
         clusterIndex[now_cluster_j] = 0
 
-        del clusterMap[now_cluster_i]
-        del clusterMap[now_cluster_j]
+        del clusterSize[now_cluster_i]
+        del clusterSize[now_cluster_j]
 
-        clusterCount += 1
+        clusterLastId += 1
         clusterIndex.append(1)
-        clusterMap[clusterCount] = ni + nj
+        clusterSize[clusterLastId] = ni + nj
         clusterpoint.append(clusterpoint[now_cluster_i] + clusterpoint[now_cluster_j])
         clusterpoint[now_cluster_i] = []
         clusterpoint[now_cluster_j] = []
-        for k in clusterMap.keys():
-            if k == clusterCount:
+        for k in clusterSize.keys():
+            if k == clusterLastId:
                 continue
             else:  # 计算新的距离
-                nk = clusterMap[k]
+                nk = clusterSize[k]
                 alpha_i = (ni + nk) / (ni + nj + nk)
                 alpha_j = (nj + nk) / (ni + nj + nk)
                 beta = -nk / (ni + nj + nk)
                 newDistance = alpha_i * clusterDistance[_getname(now_cluster_i, k)]
                 newDistance += alpha_j * clusterDistance[_getname(now_cluster_j, k)]
                 newDistance += beta * clusterDistance[_getname(now_cluster_i, now_cluster_j)]
-                clusterDistance[_getname(clusterCount, k)] = newDistance
-    finalcluster = [x for x in clusterpoint if x]
+                clusterDistance[_getname(clusterLastId, k)] = newDistance
+
+    finalCluster = [x for x in clusterpoint if x]
 
     # build rel
+    rel = _build_rel(X, args, finalCluster)
+    # build one-hot
+    one_hot = _build_onehot(args, finalCluster, group)
+    # build new-groups
+    new_groups = _build_groups(finalCluster, group)
+    return new_groups, one_hot, rel
+
+
+def _build_groups(finalcluster, group):
+    new_groups = []
+    for cluster in finalcluster:
+        tmp = []
+        for c in cluster:
+            tmp.append(group[c])
+        new_groups.append(tmp)
+    return new_groups
+
+
+def _build_onehot(args, finalcluster, group):
+    usertocluter = [0 for i in range(args.num_clients)]
+    for i in range(len(finalcluster)):
+        for j in range(len(finalcluster[i])):
+            usertocluter[finalcluster[i][j]] = i
+    one_hot = crypten.cryptensor(torch.zeros(args.num_clients, args.clust))
+    pri_index = []
+    for k in range(args.num_clients):
+        pri_index.append(crypten.cryptensor(k))
+    for i in range(len(usertocluter)):
+        for j in range(args.num_clients):
+            tmp = (pri_index[j] - group[i])
+            one_hot[j][usertocluter[i]] += (tmp == pri_index[0])
+    return one_hot
+
+
+def _build_rel(X, args, finalcluster):
     X_groups = []
     for i in range(len(finalcluster)):
         X_group = X[finalcluster[i][0]]
@@ -118,27 +154,7 @@ def _clusters(group, w_local, args):
                     b = (X_groups[j]).norm()
                     dist = 1 - X_groups[i].dot(X_groups[j].T).div(a * b)
                     rel[-1].append(dist)
-
-    usertocluter = [0 for i in range(args.num_clients)]
-    for i in range(len(finalcluster)):
-        for j in range(len(finalcluster[i])):
-            usertocluter[finalcluster[i][j]] = i
-    one_hot = crypten.cryptensor(torch.zeros(args.num_clients, args.clust))
-    pri_index = []
-    for k in range(args.num_clients):
-        pri_index.append(crypten.cryptensor(k))
-    for i in range(len(usertocluter)):
-        for j in range(args.num_clients):
-            tmp = (pri_index[j] - group[i])
-            one_hot[j][usertocluter[i]] += (tmp == pri_index[0])
-
-    new_groups = []
-    for cluster in finalcluster:
-        tmp = []
-        for c in cluster:
-            tmp.append(group[c])
-        new_groups.append(tmp)
-    return new_groups, one_hot, rel
+    return rel
 
 
 def simulation_clusters(w_local_enc, args):
@@ -162,6 +178,8 @@ if __name__ == '__main__':
     parser.add_argument('--dist', type=str, default='L2')
 
     from CFMTL.model import Net_mnist
+
+
     @run_multiprocess(world_size=2)
     def test(args):
         w_local = torch.load(f="./w_local.pth")
@@ -175,7 +193,11 @@ if __name__ == '__main__':
                 new_groups[i][j] = int(new_groups[i][j].get_plain_text().item())
         print(new_groups)
         # [[6], [7, 17], [15, 11, 12, 14, 13, 18], [19, 10, 8], [3, 16, 4, 9, 1, 5, 2, 0]]
+        # [[6], [7, 17], [11, 18, 13, 12, 15, 14], [10, 19, 8], [16, 3, 5, 4, 2, 9, 1, 0]]
 
         # [[2, 3], [14, 15], [0, 1, 16, 17], [8, 9, 12, 13, 18, 19], [4, 5, 6, 7, 10, 11]]
+        # [[2, 3], [14, 15], [0, 1, 16, 17], [13, 12, 19, 18, 8, 9], [11, 10, 6, 7, 4, 5]]
+
+
     args = parser.parse_args()
     test(args)
