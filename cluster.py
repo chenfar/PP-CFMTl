@@ -29,7 +29,6 @@ def _clusters(group, w_local, args):
         for j in range(i, args.num_clients):
             tmp = (X[i] - X[j]) * (X[i] - X[j])
             distance_matrix[i][j] = tmp.sqrt()
-            print("ok......")
     print("distance compute over.....")
 
     clusterDistance = dict()
@@ -158,20 +157,25 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_clients', type=int, default=10)
+    parser.add_argument('--num_clients', type=int, default=20)
     parser.add_argument('--clust', type=int, default=5)
     parser.add_argument('--dist', type=str, default='L2')
 
     from CFMTL.model import Net_mnist
     @run_multiprocess(world_size=2)
     def test(args):
-        # w_local = torch.load(f="./w_local.pth")
-        w_local = [Net_mnist().state_dict() for i in range(args.num_clients)]
+        w_local = torch.load(f="./w_local.pth")
+        # w_local = [Net_mnist().state_dict() for i in range(args.num_clients)]
         print(len(w_local))
         from aggre import encrypt_w
         w_local_enc = encrypt_w(w_local)
-        simulation_clusters(w_local_enc, args)
+        new_groups, one_hot, rel = simulation_clusters(w_local_enc, args)
+        for i in range(len(new_groups)):
+            for j in range(len(new_groups[i])):
+                new_groups[i][j] = int(new_groups[i][j].get_plain_text().item())
+        print(new_groups)
+        # [[6], [7, 17], [15, 11, 12, 14, 13, 18], [19, 10, 8], [3, 16, 4, 9, 1, 5, 2, 0]]
 
-
+        # [[2, 3], [14, 15], [0, 1, 16, 17], [8, 9, 12, 13, 18, 19], [4, 5, 6, 7, 10, 11]]
     args = parser.parse_args()
     test(args)

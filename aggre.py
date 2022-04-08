@@ -84,18 +84,19 @@ def cluster_avg_w(one_hot, W):
     num_g = one_hot.size()[1]
     num_c = len(W)
     mix_w_groups = [[] for _ in range(num_g)]
+    num_c_per_group = [0 for _ in range(num_g)]
     for c in range(num_c):
         if W[c] is None:
             continue
         for g in range(num_g):
             mix_w = OrderedDict()  # create a new state_dict
             c_in_g_code = one_hot[c][g]
+            num_c_per_group[g] += c_in_g_code
             for k in W[c].keys():
                 mix_w[k] = W[c][k] * c_in_g_code
             mix_w_groups[g].append(mix_w)
 
     new_w_groups = []
-    num_c_per_group = one_hot.sum(0)
     for g in range(num_g):
         new_w_groups.append(fed_avg(mix_w_groups[g], num_c=num_c_per_group[g]))
 
@@ -127,3 +128,21 @@ def client_w(one_hot, w_groups):
                 mix_w[k].add_(w_groups[g][k] * one_hot[c][g])
         client_ws.append(mix_w)
     return client_ws
+
+
+def FedAvg(groups, w_local):
+    new_w_groups = []
+    for g in groups:
+        tmp = []
+        for i in g:
+            if w_local[i] is not None:
+                tmp.append(w_local[i])
+        w_avg = None
+        if len(tmp) > 0:
+            w_avg = tmp[0]
+            for i in w_avg.keys():
+                for j in range(1, len(tmp)):
+                    w_avg[i] += tmp[j][i]
+                w_avg[i] = torch.div(w_avg[i], len(tmp))
+        new_w_groups.append(w_avg)
+    return new_w_groups

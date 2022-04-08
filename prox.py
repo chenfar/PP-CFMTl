@@ -1,7 +1,4 @@
-import numpy as np
-import torch
 from model import *
-import copy
 import crypten
 
 
@@ -17,18 +14,11 @@ def L2(old_params, old_w, param, args, rel):
         for j in range(len(old_params[i])):
             old_params[i][j] = old_params[i][j].flatten()
 
-    _w = w[0]
-    for i in range(1, len(w)):
-        _w = crypten.cat([_w, w[i]])
-    _old_w = old_w[0]
-    for i in range(1, len(old_w)):
-        _old_w = crypten.cat([_old_w, old_w[i]])
+    _w = crypten.cat(w)
+    _old_w = crypten.cat(old_w)
     _old_params = []
     for i in range(len(old_params)):
-        _old_param = old_params[i][0]
-        for j in range(1, len(old_params[i])):
-            _old_param = crypten.cat([_old_param, old_params[i][j]])
-        _old_params.append(_old_param)
+        _old_params.append(crypten.cat(old_params[i]))
 
     x = _w - _old_w
     x = x.norm()
@@ -60,12 +50,11 @@ def L2_Prox(w_groups, args, rel):
 
     old_params = []
     for w in w_groups:
-        net = Net().encrypt()
-        net.load_state_dict(w, strict=False)
+        # net = Net().encrypt()
+        # net.load_state_dict(w, strict=False)
         tmp = []
-        for p in net.parameters():
-            tmp.append(p.clone())
-            # tmp.append(copy.deepcopy(p))
+        for k in w.keys():
+            tmp.append(w[k].clone())
         old_params.append(tmp)
 
     w_new = []
@@ -74,19 +63,18 @@ def L2_Prox(w_groups, args, rel):
         net = Net().encrypt()
         net.load_state_dict(w, strict=False)
 
-        # opt = crypten.optim.SGD(net.parameters(), lr=args.prox_lr, momentum=args.prox_momentum)
+        opt = crypten.optim.SGD(net.parameters(), lr=args.prox_lr, momentum=args.prox_momentum)
         for iter in range(args.prox_local_ep):
             loss = L2(old_params[:i] + old_params[i + 1:], old_params[i], net.parameters(), args, rel[i])
-            if iter == 0:
-                loss_start = copy.deepcopy(loss)
-            if iter == args.prox_local_ep - 1:
-                loss_end = copy.deepcopy(loss)
-                percent = (loss_end - loss_start).get_plain_text() / loss_start.get_plain_text() * 100
-                print("Percent: {:.2f}%".format(percent))
-            net.zero_grad()
+            # if iter == 0:
+            #     loss_start = copy.deepcopy(loss)
+            # if iter == args.prox_local_ep - 1:
+            #     loss_end = copy.deepcopy(loss)
+            #     percent = (loss_end - loss_start).get_plain_text() / loss_start.get_plain_text() * 100
+            #     print("Percent: {:.2f}%".format(percent))
+            opt.zero_grad(set_to_none=True)
             loss.backward()
-            net.update_parameters(learning_rate=args.prox_lr)
-
+            opt.step()
         w_new.append(net.state_dict())
 
     return w_new

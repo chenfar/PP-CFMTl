@@ -29,4 +29,16 @@ def test():
     print((tag.eq(t)).get_plain_text())
 
 
-test()
+from CFMTL.cluster import Cluster
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--if_clust', type=bool, default=True)
+parser.add_argument('--num_clients', type=int, default=20)
+parser.add_argument('--clust', type=int, default=5)
+parser.add_argument('--dist', type=str, default='L2')
+args = parser.parse_args()
+group = [i for i in range(20)]
+w_local = torch.load("./w_local.pth")
+new_groups, new_w_groups, rel = Cluster(group, w_local, args)
+print(new_groups)

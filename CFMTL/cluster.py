@@ -1,5 +1,5 @@
 import argparse
-from fedavg import FedAvg
+from CFMTL.fedavg import FedAvg
 import numpy as np
 from scipy.cluster.hierarchy import fcluster
 from scipy.cluster.hierarchy import linkage,ward
@@ -22,8 +22,6 @@ def Cluster(group, w_local, args):
     for i in range(len(group)):
         new_groups[clusters[i] - 1].append(group[i])
     X_groups = []
-
-
 
     for i in range(max(clusters)):
         new_w_local = []
