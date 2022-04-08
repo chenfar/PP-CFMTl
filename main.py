@@ -17,7 +17,7 @@ parser.add_argument('--iid', type=str, default='non-iid')
 parser.add_argument('--ratio', type=float, default=0.5)
 
 parser.add_argument('--method', type=str, default='CFMTL')
-parser.add_argument('--ep', type=int, default=20)
+parser.add_argument('--ep', type=int, default=30)
 parser.add_argument('--local_ep', type=int, default=1)
 parser.add_argument('--frac', type=float, default=0.3)
 parser.add_argument('--num_batch', type=int, default=10)
@@ -26,7 +26,7 @@ parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=20)
+parser.add_argument('--num_clients', type=int, default=30)
 parser.add_argument('--clust', type=int, default=5)
 parser.add_argument('--if_clust', type=bool, default=True)
 
@@ -86,7 +86,7 @@ if __name__ == '__main__':
                 loss_local.append(loss)
 
         print("client update w_locals, begin to do aggregation")
-        torch.save(w_local, "./w_local.pth")
+        # torch.save(w_local, "./w_local.pth")
         # w_local = torch.load("./w_local.pth")
         # exit()
 
@@ -104,15 +104,14 @@ if __name__ == '__main__':
             multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(w_local, one_hot_share, rel, args,))
             w_groups = torch.load("./w_groups.pth")
 
-        if iter > 0:
-            loss_avg = sum(loss_local) / len(loss_local)
-            print('Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
-            loss_train.append(loss_avg)
+
+        loss_avg = sum(loss_local) / len(loss_local)
+        print('Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
+        loss_train.append(loss_avg)
 
         if iter == 0:
             print("Groups Number: ", len(groups))
             print(groups)
-            exit()
 
         acc_test = []
         num_group = len(groups)

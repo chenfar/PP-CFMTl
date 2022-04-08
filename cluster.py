@@ -1,10 +1,8 @@
 # cluster的输入包括所有客户端中上传的梯度参数，客户端index都是秘密共享的形式
 
-import crypten
+
 import torch
 import numpy as np
-
-from crypten.mpc import run_multiprocess
 from utils import *
 
 
@@ -27,10 +25,10 @@ def _euclidean_dist(X, num_c):
 
 
 def _clusters(group, w_local, args):
-    # 初始化工作
     # 1.计算距离的map
     X = flatten(w_local)
     clusterDistance = _euclidean_dist(X, args.num_clients)
+
     # 2，初始化集群大小的map
     clusterSize = dict()
     for k in range(0, args.num_clients):
@@ -38,18 +36,13 @@ def _clusters(group, w_local, args):
 
     clusterLastId = args.num_clients - 1
 
-    clusterIndex = [1 for _ in range(len(clusterSize))]
-    clusterpoint = [[] for _ in range(len(clusterSize))]
-    for i in range(len(clusterSize)):
-        clusterpoint[i].append(i)
+    clusterPoint = [[i] for i in range(len(clusterSize))]
 
     # 层次聚类过程
     while True:
         if len(clusterSize) == args.clust:
             break
-        clusterList = []
-        for key in clusterSize:
-            clusterList.append(key)
+        clusterList = list(clusterSize.keys())
         clusterListLength = len(clusterList)
         now_i = 0
         now_j = 0
@@ -57,28 +50,24 @@ def _clusters(group, w_local, args):
         for i in range(0, clusterListLength - 1):
             for j in range(i + 1, clusterListLength):
                 name = _getname(clusterList[i], clusterList[j])
-                if clusterIndex[clusterList[i]] == 1 and clusterIndex[clusterList[j]] == 1 \
-                        and (min_distance_val is None or (
-                        min_distance_val > clusterDistance[name]).get_plain_text().item() == 1):
+                if min_distance_val is None or (min_distance_val > clusterDistance[name]).get_plain_text().item() == 1:
                     now_i = i
                     now_j = j
                     min_distance_val = clusterDistance[name]
+
         now_cluster_i = clusterList[now_i]
         now_cluster_j = clusterList[now_j]
         ni = clusterSize[now_cluster_i]
         nj = clusterSize[now_cluster_j]
-        clusterIndex[now_cluster_i] = 0
-        clusterIndex[now_cluster_j] = 0
 
         del clusterSize[now_cluster_i]
         del clusterSize[now_cluster_j]
 
         clusterLastId += 1
-        clusterIndex.append(1)
         clusterSize[clusterLastId] = ni + nj
-        clusterpoint.append(clusterpoint[now_cluster_i] + clusterpoint[now_cluster_j])
-        clusterpoint[now_cluster_i] = []
-        clusterpoint[now_cluster_j] = []
+        clusterPoint.append(clusterPoint[now_cluster_i] + clusterPoint[now_cluster_j])
+        clusterPoint[now_cluster_i] = []
+        clusterPoint[now_cluster_j] = []
         for k in clusterSize.keys():
             if k == clusterLastId:
                 continue
@@ -92,7 +81,7 @@ def _clusters(group, w_local, args):
                 newDistance += beta * clusterDistance[_getname(now_cluster_i, now_cluster_j)]
                 clusterDistance[_getname(clusterLastId, k)] = newDistance
 
-    finalCluster = [x for x in clusterpoint if x]
+    finalCluster = [x for x in clusterPoint if x]  # 去掉空集群
 
     # build rel
     rel = _build_rel(X, args, finalCluster)
@@ -177,7 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--clust', type=int, default=5)
     parser.add_argument('--dist', type=str, default='L2')
 
-    from CFMTL.model import Net_mnist
+    from crypten.mpc import run_multiprocess
 
 
     @run_multiprocess(world_size=2)
