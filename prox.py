@@ -54,9 +54,9 @@ def Prox(w_groups, args, rel):
 
 def L2_Prox(w_groups, args, rel):
     if args.dataset == 'mnist':
-        Net = Net_mnist
+        Net = Crypten_Net_mnist
     else:
-        Net = Net_cifar
+        Net = Crypten_Net_cifar
 
     old_params = []
     for w in w_groups:
@@ -77,13 +77,12 @@ def L2_Prox(w_groups, args, rel):
         # opt = crypten.optim.SGD(net.parameters(), lr=args.prox_lr, momentum=args.prox_momentum)
         for iter in range(args.prox_local_ep):
             loss = L2(old_params[:i] + old_params[i + 1:], old_params[i], net.parameters(), args, rel[i])
-            # loss = L2(old_params[:i] + old_params[i + 1:], old_params[i], net.parameters(), args)
-            # if iter == 0:
-            #     loss_start = copy.deepcopy(loss)
-            # if iter == args.prox_local_ep - 1:
-            #     loss_end = copy.deepcopy(loss)
-            #     percent = (loss_end - loss_start).get_plain_text() / loss_start.get_plain_text()  * 100
-            #     print("Percent: {:.2f}%".format(percent))
+            if iter == 0:
+                loss_start = copy.deepcopy(loss)
+            if iter == args.prox_local_ep - 1:
+                loss_end = copy.deepcopy(loss)
+                percent = (loss_end - loss_start).get_plain_text() / loss_start.get_plain_text() * 100
+                print("Percent: {:.2f}%".format(percent))
             net.zero_grad()
             loss.backward()
             net.update_parameters(learning_rate=args.prox_lr)

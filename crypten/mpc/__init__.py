@@ -9,7 +9,7 @@ from crypten.config import cfg
 from crypten.mpc import primitives  # noqa: F401
 from crypten.mpc import provider
 
-from .context import run_multiprocess
+from .context import run_multiprocess,multiprocess_wrap
 from .mpc import MPCTensor
 from .ptype import ptype
 
@@ -20,6 +20,7 @@ __all__ = [
     "provider",
     "ptype",
     "run_multiprocess",
+    "multiprocess_wrap",
 ]
 
 # the different private type attributes of an mpc encrypted tensor

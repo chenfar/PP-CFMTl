@@ -1,5 +1,5 @@
 import argparse
-from model import *
+from CFMTL.model import *
 import os
 import torch
 from torch import nn
@@ -48,17 +48,3 @@ def Test(args, w, dataset=None, ids=None):
     acc = 100.00 * correct / len(dataloader.dataset)
 
     return acc, loss_test
-
-
-from scipy.cluster.hierarchy import ward, fcluster
-from scipy.spatial.distance import pdist
-
-X = [[0, 0], [0, 1], [1, 0],
-     [0, 4], [0, 3], [1, 4],
-     [4, 0], [3, 0], [4, 1],
-     [4, 4], [3, 4], [4, 3]]
-
-# y = pdist()
-# print(y)
-from sklearn.cluster import AgglomerativeClustering
-print(ward(X))

@@ -33,24 +33,18 @@ def _launch(func, rank, world_size, rendezvous_file, queue, func_args, func_kwar
     queue.put((rank, return_value))
 
 
-def run_multiprocess(world_size, maxsize=None):
+def run_multiprocess(world_size):
     """Defines decorator to run function across multiple processes
 
     Args:
         world_size (int): number of parties / processes to initiate.
-        maxsize: Enables the user to increase the size of returnable values
-            (See https://docs.python.org/3/library/multiprocessing.html#multiprocessing.Queue)
     """
 
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             rendezvous_file = tempfile.NamedTemporaryFile(delete=True).name
-
-            if maxsize is None:
-                queue = multiprocessing.Queue()
-            else:
-                queue = multiprocessing.Queue(maxsize)
+            queue = multiprocessing.Queue()
 
             processes = [
                 multiprocessing.Process(
@@ -113,3 +107,41 @@ def run_multiprocess(world_size, maxsize=None):
         return wrapper
 
     return decorator
+
+
+def multiprocess_wrap(func, world_size=2, args=(), **kwargs):
+    """Defines decorator to run function across multiple processes
+
+    Args:
+        world_size (int): number of parties / processes to initiate.
+        func (function): the target to run
+        args/kwargs: the args/kargs for func
+    """
+    rendezvous_file = tempfile.NamedTemporaryFile(delete=True).name
+
+    queue = multiprocessing.Queue()
+
+    processes = [
+        multiprocessing.Process(
+            target=_launch,
+            args=(func, rank, world_size, rendezvous_file, queue, args, kwargs),
+        )
+        for rank in range(world_size)
+    ]
+
+    for process in processes:
+        process.start()
+
+    for process in processes:
+        process.join()
+
+    successful = [process.exitcode == 0 for process in processes]
+    if not all(successful):
+        logging.error("One of the parties failed. Check past logs")
+        return None
+
+    return_values = []
+    while not queue.empty():
+        return_values.append(queue.get())
+
+    return [value for _, value in sorted(return_values, key=itemgetter(0))]

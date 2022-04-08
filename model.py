@@ -1,9 +1,9 @@
 import crypten.nn as nn
 
 
-class Net_mnist(nn.Module):
+class Crypten_Net_mnist(nn.Module):
     def __init__(self):
-        super(Net_mnist, self).__init__()
+        super(Crypten_Net_mnist, self).__init__()
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.conv2_drop = nn.Dropout2d()
@@ -23,9 +23,9 @@ class Net_mnist(nn.Module):
         return x.log_softmax(dim=1)
 
 
-class Net_cifar(nn.Module):
+class Crypten_Net_cifar(nn.Module):
     def __init__(self):
-        super(Net_cifar, self).__init__()
+        super(Crypten_Net_cifar, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
