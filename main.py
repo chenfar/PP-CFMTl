@@ -17,17 +17,17 @@ parser.add_argument('--iid', type=str, default='non-iid')
 parser.add_argument('--ratio', type=float, default=0.5)
 
 parser.add_argument('--method', type=str, default='CFMTL')
-parser.add_argument('--ep', type=int, default=30)
+parser.add_argument('--ep', type=int, default=50)
 parser.add_argument('--local_ep', type=int, default=1)
-parser.add_argument('--frac', type=float, default=0.3)
+parser.add_argument('--frac', type=float, default=0.2)
 parser.add_argument('--num_batch', type=int, default=10)
 
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=30)
-parser.add_argument('--clust', type=int, default=5)
+parser.add_argument('--num_clients', type=int, default=250)
+parser.add_argument('--clust', type=int, default=50)
 parser.add_argument('--if_clust', type=bool, default=True)
 
 parser.add_argument('--prox', type=bool, default=True)
@@ -57,79 +57,133 @@ if __name__ == '__main__':
         dict_train, dict_test = mnist_non_iid_single_class(dataset_train, dataset_test, args.num_clients, 10)
     Net = Net_mnist
 
-    groups = [[i for i in range(args.num_clients)]]
-    loss_train = []
-    pro_train = []
-    acc_train = []
-    w_groups = [Net().state_dict()]
+    if args.experiment == 'performance-mnist':
+        acc_final = [[] for i in range(3)]
+        pro_final = [[] for i in range(3)]
+        for m in range(1, 3):
+            if m == 0:
+                args.method = 'FL'
+            if m == 1:
+                args.method = 'CFMTL'
+                args.prox = False
+                args.if_clust = True
+            if m == 2:
+                args.method = 'CFMTL'
+                args.prox = True
+                args.if_clust = True
 
-    for iter in range(args.ep):
-        loss_local = []
-        num_group = len(groups)
+            if args.method == 'FL':
+                loss_train = []
+                pro_train = pro_final[m]
+                acc_train = acc_final[m]
+                w_global = Net().state_dict()
+                for iter in range(args.ep):
+                    w_local = []
+                    loss_local = []
+                    num_clients = max(int(args.frac * args.num_clients), 1)
+                    clients = np.random.choice(range(args.num_clients), num_clients, replace=False)
+                    for id in clients:
+                        mem, w, loss = Local_Update(args, w_global, dataset_train, dict_train[id], iter)
+                        w_local.append(w)
+                        loss_local.append(loss)
 
-        w_local = [None for i in range(args.num_clients)]  # 所有客户端w的集合torch.save
+                    multiprocess_wrap(func=FedAvg, world_size=2, args=(w_local,))
+                    w_global = torch.load("./w_avg.pth")
 
-        # 并行在客户端执行的
-        # if iter > 0:
-        for group_id in range(num_group):
-            group = groups[group_id]
-            if iter > 0:
-                num_clients = max(int(args.frac * len(group)), 1)
-                if iter == 1:
-                    print(f"group {group_id} select {num_clients}/{len(group)} client")
-                clients = np.random.choice(group, num_clients, replace=False)
-                group = clients
-            w_group = w_groups[group_id]
-            for id in group:
-                mem, w, loss = Local_Update(args, w_group, dataset_train, dict_train[id], iter)
-                w_local[id] = w  # 添加到server端
-                loss_local.append(loss)
+                    loss_avg = sum(loss_local) / len(loss_local)
+                    print('Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
+                    loss_train.append(loss_avg)
 
-        print("client update w_locals, begin to do aggregation")
-        # torch.save(w_local, "./w_local.pth")
-        # w_local = torch.load("./w_local.pth")
-        # exit()
+                    acc_test = []
+                    for id in range(args.num_clients):
+                        acc, loss_test = Test(args, w_global, dataset_test, dict_test[id])
+                        acc_test.append(acc)
+                    acc_avg = sum(acc_test) / len(acc_test)
+                    print("Testing accuracy: {:.2f}".format(acc_avg))
+                    acc_train.append(acc_avg)
+                    acc_client_num_95 = 0
+                    for acc_client in acc_test:
+                        if acc_client >= 95:
+                            acc_client_num_95 += 1
+                    pro_train.append(acc_client_num_95 / args.num_clients * 100)
+                    print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
 
-        if iter == 0:
-            multiprocess_wrap(Cluster_Init, world_size=2, args=(w_local, args,))
+            if args.method == 'CFMTL':
+                groups = [[i for i in range(args.num_clients)]]
+                loss_train = []
+                pro_train = pro_final[m]
+                acc_train = acc_final[m]
+                w_groups = [Net().state_dict()]
 
-            groups, w_groups, rel0, one_hot_share0 = torch.load("./rank0.pth")
-            rel1, one_hot_share1 = torch.load("./rank1.pth")
+                for iter in range(args.ep):
+                    loss_local = []
+                    num_group = len(groups)
 
-            one_hot_share = [one_hot_share0, one_hot_share1]
-            rel = [rel0, rel1]
+                    w_local = [None for i in range(args.num_clients)]  # 所有客户端w的集合torch.save
 
-        else:
-            # w_groups = FedAvg(groups,w_local)  明文聚合
-            multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(w_local, one_hot_share, rel, args,))
-            w_groups = torch.load("./w_groups.pth")
+                    # 并行在客户端执行的
+                    for group_id in range(num_group):
+                        group = groups[group_id]
+                        if iter > 0:
+                            num_clients = max(int(args.frac * len(group)), 1)
+                            if iter == 1:
+                                print(f"group {group_id} select {num_clients}/{len(group)} client")
+                            clients = np.random.choice(group, num_clients, replace=False)
+                            group = clients
+                        w_group = w_groups[group_id]
+                        for id in group:
+                            mem, w, loss = Local_Update(args, w_group, dataset_train, dict_train[id], iter)
+                            w_local[id] = w  # 添加到server端
+                            loss_local.append(loss)
 
+                    print("client update w_locals, begin to do aggregation")
+                    # torch.save(w_local, "./w_local.pth")
+                    # w_local = torch.load("./w_local.pth")
+                    # exit()
 
-        loss_avg = sum(loss_local) / len(loss_local)
-        print('Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
-        loss_train.append(loss_avg)
+                    if iter == 0:
+                        if m == 1:  # m = 2的分类和 m = 1是相同的避免重复'
+                            torch.save(w_local, './w_local.pth')
+                            multiprocess_wrap(Cluster_Init, world_size=2, args=(None, args,))
 
-        if iter == 0:
-            print("Groups Number: ", len(groups))
-            print(groups)
+                        groups, w_groups, rel0, one_hot_share0 = torch.load("./rank0.pth")
+                        rel1, one_hot_share1 = torch.load("./rank1.pth")
 
-        acc_test = []
-        num_group = len(groups)
-        for group_id in range(num_group):
-            group = groups[group_id]
-            w_group = w_groups[group_id]
-            for id in group:
-                acc, loss_test = Test(args, w_group, dataset_test, dict_test[id])
-                acc_test.append(acc)
-        acc_avg = sum(acc_test) / len(acc_test)
-        print("Testing accuracy: {:.2f}".format(acc_avg))
-        acc_train.append(acc_avg.item())
-        acc_client_num_95 = 0
-        for acc_client in acc_test:
-            if acc_client >= 95:
-                acc_client_num_95 += 1
-        pro_train.append(acc_client_num_95 / args.num_clients * 100)
-        print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
-    print(acc_train)
-    print(loss_train)
-    print(pro_train)
+                        one_hot_share = [one_hot_share0, one_hot_share1]
+                        rel = [rel0, rel1]
+
+                    else:
+                        multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(w_local, one_hot_share, rel, args,))
+                        w_groups = torch.load("./w_groups.pth")
+
+                    loss_avg = sum(loss_local) / len(loss_local)
+                    print('Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
+                    loss_train.append(loss_avg)
+
+                    if iter == 0:
+                        print("Groups Number: ", len(groups))
+                        print(groups)
+
+                    acc_test = []
+                    num_group = len(groups)
+                    for group_id in range(num_group):
+                        group = groups[group_id]
+                        w_group = w_groups[group_id]
+                        for id in group:
+                            acc, loss_test = Test(args, w_group, dataset_test, dict_test[id])
+                            acc_test.append(acc)
+                    acc_avg = sum(acc_test) / len(acc_test)
+                    print("Testing accuracy: {:.2f}".format(acc_avg))
+                    acc_train.append(acc_avg)
+                    acc_client_num_95 = 0
+                    for acc_client in acc_test:
+                        if acc_client >= 95:
+                            acc_client_num_95 += 1
+                    pro_train.append(acc_client_num_95 / args.num_clients * 100)
+                    print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
+        record = []
+        record.append(copy.deepcopy(acc_final))
+        record.append(copy.deepcopy(pro_final))
+        record = np.array(record)
+        print(record)
+        np.save('{}.npy'.format(args.filename), record)

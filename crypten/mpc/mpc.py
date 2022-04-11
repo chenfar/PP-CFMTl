@@ -11,6 +11,7 @@ from crypten.common.tensor_types import is_tensor
 from crypten.common.util import torch_stack
 from crypten.config import cfg
 from crypten.cuda import CUDALongTensor
+from .primitives.fss import FSSProtocol
 
 from ..cryptensor import CrypTensor
 from ..encoder import FixedPointEncoder
@@ -232,13 +233,24 @@ class MPCTensor(CrypTensor):
     # Comparators
     def _ltz(self):
         """Returns 1 for elements that are < 0 and 0 otherwise"""
-        shift = torch.iinfo(torch.long).bits - 1
-        precision = 0 if self.encoder.scale == 1 else None
+        # shift = torch.iinfo(torch.long).bits - 1
+        # precision = 0 if self.encoder.scale == 1 else None
+        #
+        # result = self._to_ptype(Ptype.binary)
+        # result.share >>= shift
+        # result = result._to_ptype(Ptype.arithmetic, precision=precision, bits=1)
+        # result.encoder._scale = 1
+        result = self.shallow_copy()
+        from .primitives.fss import fss_op
+        result._tensor = 1 - fss_op(-result._tensor, op="comp")
+        return result
 
-        result = self._to_ptype(Ptype.binary)
-        result.share >>= shift
-        result = result._to_ptype(Ptype.arithmetic, precision=precision, bits=1)
-        result.encoder._scale = 1
+    def gt(self, y):
+        """Returns self > y"""
+        result = self.shallow_copy()
+        if isinstance(y, MPCTensor):
+            y = y._tensor
+        result._tensor = FSSProtocol.gt(self._tensor, y)
         return result
 
     def eq(self, y):

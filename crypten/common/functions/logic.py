@@ -8,7 +8,6 @@
 import crypten
 from crypten.common.tensor_types import is_tensor
 
-
 __all__ = [
     "__eq__",
     "__ge__",
@@ -37,7 +36,7 @@ def ge(self, y):
 
 def gt(self, y):
     """Returns self > y"""
-    return (-self + y)._ltz()
+    return (y - self)._ltz()
 
 
 def le(self, y):

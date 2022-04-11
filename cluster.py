@@ -1,5 +1,5 @@
 # cluster的输入包括所有客户端中上传的梯度参数，客户端index都是秘密共享的形式
-
+import time
 
 import torch
 import numpy as np
@@ -40,6 +40,7 @@ def _clusters(group, w_local, args):
 
     # 层次聚类过程
     while True:
+        t = time.time()
         if len(clusterSize) == args.clust:
             break
         clusterList = list(clusterSize.keys())
@@ -57,6 +58,7 @@ def _clusters(group, w_local, args):
 
         now_cluster_i = clusterList[now_i]
         now_cluster_j = clusterList[now_j]
+        print(f"select {now_cluster_i} and {now_cluster_j}")
         ni = clusterSize[now_cluster_i]
         nj = clusterSize[now_cluster_j]
 
@@ -80,6 +82,7 @@ def _clusters(group, w_local, args):
                 newDistance += alpha_j * clusterDistance[_getname(now_cluster_j, k)]
                 newDistance += beta * clusterDistance[_getname(now_cluster_i, now_cluster_j)]
                 clusterDistance[_getname(clusterLastId, k)] = newDistance
+        print(time.time()-t)
 
     finalCluster = [x for x in clusterPoint if x]  # 去掉空集群
 

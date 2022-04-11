@@ -13,6 +13,14 @@ from crypten.mpc.primitives import ArithmeticSharedTensor, BinarySharedTensor
 
 from .provider import TupleProvider
 
+import multiprocessing
+import sycret
+import torch.distributed as dist
+
+N_CORES = multiprocessing.cpu_count()
+dpf = sycret.EqFactory(n_threads=N_CORES)
+dif = sycret.LeFactory(n_threads=N_CORES)
+
 
 class TrustedFirstParty(TupleProvider):
     NAME = "TFP"
@@ -76,3 +84,28 @@ class TrustedFirstParty(TupleProvider):
         rB = BinarySharedTensor(r, src=0)
 
         return rA, rB
+
+    def generate_fss_keys(self, rank, n_values, op):
+        """
+            Generate random bit tensor for fss, A pair of keys, one for rank 0, another for rank 1
+            rank: rank of process
+            n_values: number of key values
+            op: eq or comp
+        """
+
+        if rank == 0:
+            if op == "eq":
+                primitives = dpf.keygen(n_values=n_values)
+            elif op == "comp":
+                primitives = dif.keygen(n_values=n_values)
+            else:
+                raise ValueError(f"{op} is an FSS unsupported operation.")
+
+            primitives = [torch.tensor(p) for p in primitives]
+            keys = primitives[0]
+            dist.send(primitives[1], dst=1)
+        else:
+            size = (n_values, 621 if op == "eq" else 920)
+            keys = torch.empty(size=size, dtype=torch.uint8)
+            dist.recv(keys, src=0)
+        return keys
