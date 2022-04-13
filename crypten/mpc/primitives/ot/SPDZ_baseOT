@@ -1,0 +1,142 @@
+import torch
+
+import baseOT as ot
+import crypten
+from crypten import mpc
+import torch.distributed as dist
+import crypten.communicator as comm
+import random
+from crypten.mpc.primitives.converters import convert
+from crypten.mpc.ptype import ptype as Ptype
+from crypten.mpc.primitives import ArithmeticSharedTensor
+import numpy as np
+from crypten.common.rng import generate_random_ring_element, generate_random_positive_ring_element
+
+def Gen_rand_key(data_len):
+    key_0 = []
+    key_1 = []
+    for i in range(data_len):
+        key_0.append(str(random.randint(0, 1)))
+        key_1.append(str(random.randint(0, 1)))
+    return key_0, key_1
+
+def AtoB(num, date_len):
+    ans = [0 for i in range(date_len)]
+    len = 0
+    while num > 0:
+        ans[len] = num % 2
+        num //= 2
+        len += 1
+    return ans
+    # num = num_Arithm.data
+    # num_bin = torch.rand(num_Arithm.size())
+    # for i in range(date_len):
+    #     if i == 0:
+    #         num_bin = num % 2
+    #         num //= 2
+    #         num_bin = num_bin.unsqueeze(-1)
+    #     else:
+    #         mid = num % 2
+    #         num //= 2
+    #         mid = mid.unsqueeze(-1)
+    #         num_bin = torch.cat((mid, num_bin), dim=-1)
+    # return num_bin
+
+
+def BtoA(num, date_len):
+    ans = 0
+    for i in range(date_len):
+        ans += (num[i] * (2**i))
+    return ans
+
+
+def COPE_SERVER(a_tensor, data_len):
+    process_randk = dist.get_rank()
+    obvil_tran = ot.BaseOT(process_randk ^ 1)
+    key_0, key_1 = Gen_rand_key(data_len)
+    obvil_tran.send(key_0, key_1)
+    num_count = 0
+    t_0 = [0 for i in range(data_len)]
+    t_1 = [0 for i in range(data_len)]
+    u = [0 for i in range(data_len)]
+    for i in range(data_len):
+        random.seed(int(key_0[i]) + num_count)
+        t_0[i] = random.randint(0, (2 ** 12))
+        random.seed(int(key_1[i]) + num_count)
+        t_1[i] = random.randint(0, (2 ** 12))
+        u[i] = t_0[i] - t_1[i] + a_tensor
+        comm.get().send_obj(u[i], (process_randk ^ 1))
+        num_count += 1
+    t = ((BtoA(t_0, data_len)) % (2 ** 60)) * -1
+    ans = generate_random_positive_ring_element((1, 1), ring_size=(2 ** 5))
+    ans[0][0] = t
+    Ans_Muti = ArithmeticSharedTensor.from_shares(ans, precision=0)
+    return Ans_Muti
+
+
+def COPE_CLIENT(b_tensor, data_len):
+    process_randk = dist.get_rank()
+    obvil_tran = ot.BaseOT(process_randk ^ 1)
+    b_binary = AtoB(b_tensor, data_len)
+    key_x = obvil_tran.receive(b_binary)
+    num_count = 0
+    t_delt = [0 for i in range(data_len)]
+    u = [0 for i in range(data_len)]
+    q = [0 for i in range(data_len)]
+    for i in range(data_len):
+        random.seed(int(key_x[i]) + num_count)
+        t_delt[i] = random.randint(0, (2 ** 12))
+        u[i] = comm.get().recv_obj(process_randk ^ 1)
+        q[i] = b_binary[i] * u[i] + t_delt[i]
+        num_count += 1
+    q = (BtoA(q, data_len)) % (2 ** 60)
+    ans = generate_random_positive_ring_element((1, 1), ring_size=(2 ** 5))
+    ans[0][0] = q
+    Ans_Muti = ArithmeticSharedTensor.from_shares(ans, precision=0)
+    return Ans_Muti
+
+
+#生成随机三元组
+@mpc.run_multiprocess(world_size=2)
+def GEN_TRIPLES(data_len):
+    a = random.randint(0, 2 ** 7)
+    b = random.randint(0, 2 ** 7)
+    process_rank = dist.get_rank()
+    print(a,b,process_rank)
+    if process_rank == 0:
+        c = COPE_SERVER(a, data_len)
+    else:
+        c = COPE_CLIENT(b, data_len)
+    if process_rank == 1:
+        c += COPE_SERVER(a, data_len)
+    else:
+        c += COPE_CLIENT(b, data_len)
+    ans = generate_random_positive_ring_element((1, 1), ring_size=(2 ** 5))
+    ans[0][0] = a*b
+    temp = ArithmeticSharedTensor.from_shares(ans, precision=0)
+    c += temp
+    return a,b,c
+
+@mpc.run_multiprocess(world_size=2)
+def VERIFY_CORRECT(data_len):
+    process_rank = dist.get_rank()
+    if process_rank == 0:
+        wait_verfiy = random.randint(0, 2 ** 7) #这是一个明文值，不是分享值，验证这个值是否是对的，这个值是x,通过计算x*dely,看看这个结果是不是等于m来判断这个x是不是被篡改，其中的delt是始终不变的，但是谁都不知道
+        print(wait_verfiy, process_rank,"\n")
+    delt = random.randint(0, 2 ** 7)#这个是分享值，每个服务器上都有一个
+    print(delt,"delt",process_rank,"\n")
+    if process_rank == 0:
+        m = COPE_SERVER(wait_verfiy, data_len)
+        ans = generate_random_positive_ring_element((1, 1), ring_size=(2 ** 5))
+        ans[0][0] = wait_verfiy * delt
+        temp = ArithmeticSharedTensor.from_shares(ans, precision=0)
+        m += temp
+    else:
+        m = COPE_CLIENT(delt, data_len)
+    return m
+
+
+
+if __name__ == '__main__':
+    data_len = 64
+    VERIFY_CORRECT(data_len)

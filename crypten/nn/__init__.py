@@ -7,8 +7,7 @@
 
 
 from .init import *  # noqa: F403
-from .distances import CosineSimilarity
-from .loss import _Loss, BCELoss, BCEWithLogitsLoss, CrossEntropyLoss, L1Loss, MSELoss
+from .loss import BCELoss, BCEWithLogitsLoss, CrossEntropyLoss, L1Loss, MSELoss, RelativeEntropyLoss
 from .module import (
     AdaptiveAvgPool2d,
     AdaptiveMaxPool2d,
@@ -50,7 +49,6 @@ from .module import (
     Mean,
     Module,
     ModuleDict,
-    ModuleList,
     Mul,
     Parameter,
     Pow,
@@ -75,8 +73,7 @@ from .onnx_converter import TF_AND_TF2ONNX, from_pytorch, from_onnx, from_tensor
 
 
 # expose contents of package
-__all__ = [  # noqa: F405
-    "_Loss",
+__all__ = [
     "AdaptiveAvgPool2d",
     "AdaptiveMaxPool2d",
     "Add",
@@ -96,7 +93,6 @@ __all__ = [  # noqa: F405
     "Conv",
     "Conv1d",
     "Conv2d",
-    "CosineSimilarity",
     "CrossEntropyLoss",
     "Div",
     "Dropout",
@@ -125,12 +121,12 @@ __all__ = [  # noqa: F405
     "Mean",
     "Module",
     "ModuleDict",
-    "ModuleList",
     "MSELoss",
     "Mul",
     "Parameter",
     "Pow",
     "Range",
+    "RelativeEntropyLoss",
     "ReLU",
     "ReLU6",
     "Reshape",

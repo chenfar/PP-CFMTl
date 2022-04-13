@@ -5,19 +5,58 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from dataclasses import dataclass
+
 import torch
+import crypten.mpc.protocols as protocol
 from crypten import communicator as comm
 from crypten.common.tensor_types import is_tensor
-from crypten.common.util import torch_stack
-from crypten.config import cfg
+from crypten.common.util import ConfigBase, torch_stack
 from crypten.cuda import CUDALongTensor
-from .primitives.fss import FSSProtocol
 
 from ..cryptensor import CrypTensor
 from ..encoder import FixedPointEncoder
 from .primitives.binary import BinarySharedTensor
 from .primitives.converters import convert
 from .ptype import ptype as Ptype
+
+
+@dataclass
+class MPCConfig:
+    """
+    A configuration object for use by the MPCTensor.
+    """
+
+    # Used by max / argmax / min / argmin
+    max_method: str = "log_reduction"
+
+    # Used (for the moment) when generating the Beaver Triples
+    active_security: bool = False
+
+
+# Global config
+config = MPCConfig()
+ActivateProtocol = protocol.get_activate_protocol()
+
+
+def flush():
+    global ActivateProtocol
+    ActivateProtocol = protocol.get_activate_protocol()
+
+
+class ConfigManager(ConfigBase):
+    r"""
+    Use this to temporarily change a value in the `mpc.config` object. The
+    following sets `config.exp_iterations` to `10` for one function
+    invocation and then sets it back to the previous value::
+
+        with ConfigManager("exp_iterations", 10):
+            tensor.exp()
+
+    """
+
+    def __init__(self, *args):
+        super().__init__(config, *args)
 
 
 @CrypTensor.register_cryptensor("mpc")
@@ -52,10 +91,10 @@ class MPCTensor(CrypTensor):
         super().__init__(requires_grad=requires_grad)
         if device is None and hasattr(tensor, "device"):
             device = tensor.device
-
         # create the MPCTensor:
         tensor_type = ptype.to_tensor()
-        if tensor is []:
+        # if isinstance(tensor, list) and len(tensor) == 0:
+        if isinstance(tensor, list) and len(tensor) == 0:
             self._tensor = torch.tensor([], device=device)
         else:
             self._tensor = tensor_type(tensor=tensor, device=device, *args, **kwargs)
@@ -181,10 +220,10 @@ class MPCTensor(CrypTensor):
 
     def __repr__(self):
         """Returns a representation of the tensor useful for debugging."""
-        debug_mode = cfg.debug.debug_mode
+        from crypten.debug import debug_mode
 
         share = self.share
-        plain_text = self._tensor.get_plain_text() if debug_mode else "HIDDEN"
+        plain_text = self._tensor.get_plain_text() if debug_mode() else "HIDDEN"
         ptype = self.ptype
         return (
             f"MPCTensor(\n\t_tensor={share}\n"
@@ -233,16 +272,16 @@ class MPCTensor(CrypTensor):
     # Comparators
     def _ltz(self):
         """Returns 1 for elements that are < 0 and 0 otherwise"""
-        # shift = torch.iinfo(torch.long).bits - 1
-        # precision = 0 if self.encoder.scale == 1 else None
-        #
-        # result = self._to_ptype(Ptype.binary)
-        # result.share >>= shift
-        # result = result._to_ptype(Ptype.arithmetic, precision=precision, bits=1)
-        # result.encoder._scale = 1
         result = self.shallow_copy()
-        from .primitives.fss import fss_op
-        result._tensor = 1 - fss_op(-result._tensor, op="comp")
+        result._tensor = ActivateProtocol.ltz(self._tensor)
+        return result
+
+    def ge(self, y):
+        """Returns self >= y"""
+        result = self.shallow_copy()
+        if isinstance(y, MPCTensor):
+            y = y._tensor
+        result._tensor = ActivateProtocol.ge(self._tensor, y)
         return result
 
     def gt(self, y):
@@ -250,26 +289,43 @@ class MPCTensor(CrypTensor):
         result = self.shallow_copy()
         if isinstance(y, MPCTensor):
             y = y._tensor
-        result._tensor = FSSProtocol.gt(self._tensor, y)
+        result._tensor = ActivateProtocol.gt(self._tensor, y)
+        return result
+
+    def le(self, y):
+        """Returns self <= y"""
+        result = self.shallow_copy()
+        if isinstance(y, MPCTensor):
+            y = y._tensor
+        result._tensor = ActivateProtocol.le(self._tensor, y)
+        return result
+
+    def lt(self, y):
+        """Returns self < y"""
+        result = self.shallow_copy()
+        if isinstance(y, MPCTensor):
+            y = y._tensor
+        result._tensor = ActivateProtocol.lt(self._tensor, y)
         return result
 
     def eq(self, y):
         """Returns self == y"""
-        if comm.get().get_world_size() == 2:
-            return (self - y)._eqz_2PC()
-
-        return 1 - self.ne(y)
+        result = self.shallow_copy()
+        if isinstance(y, MPCTensor):
+            y = y._tensor
+        result._tensor = ActivateProtocol.eq(self._tensor, y)
+        return result
 
     def ne(self, y):
         """Returns self != y"""
-        if comm.get().get_world_size() == 2:
-            return 1 - self.eq(y)
-
-        difference = self - y
-        difference.share = torch_stack([difference.share, -(difference.share)])
-        return difference._ltz().sum(0)
+        result = self.shallow_copy()
+        if isinstance(y, MPCTensor):
+            y = y._tensor
+        result._tensor = ActivateProtocol.ne(self._tensor, y)
+        return result
 
     def _eqz_2PC(self):
+        """ 不在需要 """
         """Returns self == 0"""
         # Create BinarySharedTensors from shares
         x0 = MPCTensor(self.share, src=0, ptype=Ptype.binary)

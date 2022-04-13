@@ -31,34 +31,47 @@ __all__ = [
 
 def ge(self, y):
     """Returns self >= y"""
-    return 1 - self.lt(y)
+    return self.ge(y)
+    # return 1 - self.lt(y)
+    # return ActivateProtocol.ge(self, y)
 
 
 def gt(self, y):
     """Returns self > y"""
-    return (y - self)._ltz()
+    return self.gt(y)
+    # return (-self + y)._ltz()
+    # return ActivateProtocol.gt(self, y)
 
 
 def le(self, y):
     """Returns self <= y"""
-    return 1 - self.gt(y)
+    return self.le(y)
+    # return 1 - self.gt(y)
+    # return ActivateProtocol.le(self, y)
 
 
 def lt(self, y):
     """Returns self < y"""
-    return (self - y)._ltz()
+    return self.lt(y)
+    # return (self - y)._ltz()
+    # return ActivateProtocol.lt(self, y)
 
 
 def eq(self, y):
     """Returns self == y"""
-    return 1 - self.ne(y)
+    return self.eq(y)
+    # return 1 - self.ne(y)
+    # return ActivateProtocol.eq(self, y)
 
 
 def ne(self, y):
     """Returns self != y"""
-    difference = self - y
-    difference = type(difference).stack([difference, -difference])
-    return difference._ltz().sum(0)
+    return self.ne(y)
+    # difference = self - y
+    # difference = type(difference).stack([difference, -difference])
+    # return difference._ltz().sum(0)
+    # from crypten.mpc.protocols import ActivateProtocol
+    # return ActivateProtocol.ne(self, y)
 
 
 __eq__ = eq

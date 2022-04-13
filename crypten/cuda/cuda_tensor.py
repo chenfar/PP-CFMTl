@@ -7,7 +7,6 @@
 
 import functools
 import math
-import operator
 
 import torch
 
@@ -36,19 +35,18 @@ class CUDALongTensor(object):
     """
 
     __BITS = torch.iinfo(torch.long).bits
-    __DEFAULT_NBLOCKS = 3
-    __BLOCK_SIZE = {3: None, 4: None}  # Number of bits per block
-    __INDICES = {3: [], 4: []}
-    __SHIFTS = {3: [], 4: []}
-    for nblocks in [3, 4]:
-        __BLOCK_SIZE[nblocks] = math.ceil(__BITS / nblocks)
-        for i in range(nblocks):
-            for j in range(nblocks):
-                if (i + j) * __BLOCK_SIZE[nblocks] >= __BITS:
-                    continue
-                idx = i * nblocks + j
-                __INDICES[nblocks].append(idx)
-                __SHIFTS[nblocks].append((i + j) * __BLOCK_SIZE[nblocks])
+    __N_BLOCKS = 4
+    __BLOCK_SIZE = math.ceil(__BITS / __N_BLOCKS)
+
+    __INDICES = []
+    __SHIFTS = []
+    for i in range(__N_BLOCKS):
+        for j in range(__N_BLOCKS):
+            if (i + j) * __BLOCK_SIZE >= __BITS:
+                continue
+            idx = i * __N_BLOCKS + j
+            __INDICES.append(idx)
+            __SHIFTS.append((i + j) * __BLOCK_SIZE)
 
     def __init__(self, data=None, device=None):
         r"""
@@ -57,17 +55,15 @@ class CUDALongTensor(object):
         object that can be converted to a torch tensor via torch.as_tensor(data)
         `dtype` of the torch tensor will be automatically converted to torch.long
         regardless of `dtype` of `data`. `device` must be a cuda device.
-
         Args:
             data (Tensor, array_like, or CUDALongTensor): Initial data for CUDALongTensor.
             device (torch.device): The desired device of CUDALongTensor. Must be a cuda device.
         """
-        if device is None:
-            device = "cuda" if (data is None or not data.is_cuda) else data.device
-        else:
-            assert device.startswith(
-                "cuda"
-            ), "cannot specify a non-cuda device for CUDALongTensor"
+
+        device = "cuda" if device is None else device
+        assert device.startswith(
+            "cuda"
+        ), "Cannot specify a non-cuda device for CUDALongTensor"
 
         self._tensor = None
         if data is None:
@@ -83,7 +79,7 @@ class CUDALongTensor(object):
         if kwargs is None:
             kwargs = {}
         if func not in HANDLED_FUNCTIONS or not all(
-            issubclass(t, (torch.Tensor, CUDALongTensor)) for t in types
+                issubclass(t, (torch.Tensor, CUDALongTensor)) for t in types
         ):
             args = [t.tensor() if hasattr(t, "tensor") else t for t in args]
             result = func(*args, **kwargs)
@@ -154,12 +150,12 @@ class CUDALongTensor(object):
         return result
 
     @staticmethod
-    def __encode_as_fp64(x, num_blocks=3):
-        """Converts a CUDALongTensor to an encoding of
+    def __encode_as_fp64(x):
+        """Converts a CUDALongTensor `x` to an encoding of
         torch.cuda.DoubleTensor that represent the same data.
         """
-        nb = num_blocks
-        bks = CUDALongTensor.__BLOCK_SIZE[num_blocks]
+        bks = CUDALongTensor.__BLOCK_SIZE
+        nb = CUDALongTensor.__N_BLOCKS
 
         x_block = CUDALongTensor.stack(
             [(x >> (bks * i)) & (2 ** bks - 1) for i in range(nb)]
@@ -168,59 +164,57 @@ class CUDALongTensor(object):
         return x_block.double()
 
     @staticmethod
-    def __decode_as_int64(x, num_blocks=3):
-        """Converts a CUDALongTensor encoded as torch.cuda.DoubleTensor
+    def __decode_as_int64(x_enc):
+        """Converts a CUDALongTensor `x` encoded as torch.cuda.DoubleTensor
         back to the CUDALongTensor it encodes
         """
-        x = x.long()
+        x_enc = x_enc.long()
 
-        indices = CUDALongTensor.__INDICES[num_blocks]
-        shifts = CUDALongTensor.__SHIFTS[num_blocks]
+        indices = torch.tensor(CUDALongTensor.__INDICES, device=x_enc.device)
+        shifts = torch.tensor(CUDALongTensor.__SHIFTS, device=x_enc.device)
+        shifts = shifts.view(-1, *([1] * (x_enc.ndim - 1)))
 
-        indices = torch.tensor(indices, device=x.device)
-        shifts = torch.tensor(shifts, device=x.device)
-        shifts = shifts.view(-1, *([1] * (x.ndim - 1)))
+        x = torch.index_select(x_enc, 0, indices)
+        x <<= shifts
 
-        result = torch.index_select(x, 0, indices)
-        result <<= shifts
-
-        return CUDALongTensor(result.sum(0))
+        return CUDALongTensor(x.sum(0))
 
     @staticmethod
     def __patched_conv_ops(op, x, y, *args, **kwargs):
-        if "groups" in kwargs:
-            groups = kwargs["groups"]
-            assert (
-                groups == 1
-            ), f"more than one group is unsupported on GPU (groups = {groups})"
-            del kwargs["groups"]
-
-        bs, c, *img = x.size()
-        c_out, c_in, *ks = y.size()
-        kernel_elements = functools.reduce(operator.mul, ks)
-
-        nb = 3 if kernel_elements < 256 else 4
+        nb = CUDALongTensor.__N_BLOCKS
         nb2 = nb ** 2
 
-        x_encoded = CUDALongTensor.__encode_as_fp64(x, nb).data
-        y_encoded = CUDALongTensor.__encode_as_fp64(y, nb).data
+        x_encoded = CUDALongTensor.__encode_as_fp64(x).data
+        y_encoded = CUDALongTensor.__encode_as_fp64(y).data
 
         repeat_idx = [1] * (x_encoded.dim() - 1)
         x_enc_span = x_encoded.repeat(nb, *repeat_idx)
+        print(y_encoded.size(), nb)
         y_enc_span = torch.repeat_interleave(y_encoded, repeats=nb, dim=0)
+
+        bs, c, *img = x.size()
+        c_out, c_in, *ks = y.size()
 
         x_enc_span = x_enc_span.transpose_(0, 1).reshape(bs, nb2 * c, *img)
         y_enc_span = y_enc_span.reshape(nb2 * c_out, c_in, *ks)
 
         c_z = c_out if op in ["conv1d", "conv2d"] else c_in
 
+        if "groups" in kwargs:
+            kwargs["groups"] *= nb2
+        else:
+            kwargs["groups"] = nb2
+
         z_encoded = getattr(torch, op)(
-            x_enc_span, y_enc_span, *args, **kwargs, groups=nb2
+            x_enc_span, y_enc_span, *args, **kwargs
         )
-        z_encoded = z_encoded.reshape(bs, nb2, c_z, *z_encoded.size()[2:]).transpose_(
+
+        groups = kwargs["groups"] // nb2 if op in ["conv_transpose1d", "conv_transpose2d"] else 1
+        z_encoded = z_encoded.reshape(bs, nb2, c_z * groups, *z_encoded.size()[2:]).transpose_(
             0, 1
         )
-        return CUDALongTensor.__decode_as_int64(z_encoded, nb)
+
+        return CUDALongTensor.__decode_as_int64(z_encoded)
 
     @staticmethod
     def stack(tensors, *args, **kwargs):
@@ -241,8 +235,7 @@ class CUDALongTensor(object):
     @staticmethod
     @implements(torch.matmul)
     def matmul(x, y, *args, **kwargs):
-        # Use 4 blocks if each dot product is 256 elements or larger to prevent overflow in the sum
-        nb = 3 if x.size(-1) < 256 else 4
+        nb = CUDALongTensor.__N_BLOCKS
 
         # Prepend 1 to the dimension of x or y if it is 1-dimensional
         remove_x, remove_y = False, False
@@ -253,8 +246,8 @@ class CUDALongTensor(object):
             y = y.view(y.shape[0], 1)
             remove_y = True
 
-        x_encoded = CUDALongTensor.__encode_as_fp64(x, nb).data
-        y_encoded = CUDALongTensor.__encode_as_fp64(y, nb).data
+        x_encoded = CUDALongTensor.__encode_as_fp64(x).data
+        y_encoded = CUDALongTensor.__encode_as_fp64(y).data
 
         # Span x and y for cross multiplication
         repeat_idx = [1] * (x_encoded.dim() - 1)
@@ -275,7 +268,7 @@ class CUDALongTensor(object):
         if remove_y:
             z_encoded.squeeze_(-1)
 
-        return CUDALongTensor.__decode_as_int64(z_encoded, nb)
+        return CUDALongTensor.__decode_as_int64(z_encoded)
 
     @staticmethod
     @implements(torch.conv1d)
@@ -308,10 +301,10 @@ class CUDALongTensor(object):
     @staticmethod
     @implements(torch.nn.functional.avg_pool2d)
     def avg_pool2d(x, kernel_size, divisor_override=None, *args, **kwargs):
-        nb = CUDALongTensor.__DEFAULT_NBLOCKS
-        bks = CUDALongTensor.__BLOCK_SIZE[nb]
+        nb = CUDALongTensor.__N_BLOCKS
+        bks = CUDALongTensor.__BLOCK_SIZE
 
-        x_encoded = CUDALongTensor.__encode_as_fp64(x, nb).data
+        x_encoded = CUDALongTensor.__encode_as_fp64(x).data
 
         bs, c, h, w = x.shape
         x_encoded = x_encoded.reshape(nb * bs, c, h, w)
@@ -321,11 +314,12 @@ class CUDALongTensor(object):
         )
 
         z_enc = z_encoded.reshape(nb, bs, *z_encoded.shape[1:]).long()
+
         z = torch.zeros(
             (nb, bs, *z_encoded.shape[1:]), device=x.device, dtype=torch.long
         )
         z += z_enc << torch.tensor([bks * i for i in range(nb)], device=x.device).view(
-            nb, 1, 1, 1, 1
+            nb, *([1] * nb)
         )
         z = z.sum(0)
 
@@ -335,9 +329,9 @@ class CUDALongTensor(object):
             pool_size = kernel_size[0] * kernel_size[1]
 
         if divisor_override is not None:
-            z = torch.div(z, divisor_override, rounding_mode="trunc")
+            z //= divisor_override
         else:
-            z = torch.div(z, pool_size, rounding_mode="trunc")
+            z //= pool_size
 
         return CUDALongTensor(z)
 
@@ -394,7 +388,7 @@ class CUDALongTensor(object):
     def __ifloordiv__(self, y):
         if isinstance(y, CUDALongTensor):
             y = y.tensor()
-        self._tensor = torch.div(self._tensor, y, rounding_mode="trunc")
+        self._tensor //= y
         return self
 
     def __idiv__(self, y):

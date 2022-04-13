@@ -13,13 +13,11 @@ from crypten.common.functions import regular
 from crypten.common.rng import generate_random_ring_element
 from crypten.common.tensor_types import is_float_tensor, is_int_tensor, is_tensor
 from crypten.common.util import torch_stack
-from crypten.config import cfg
 from crypten.cryptensor import CrypTensor
 from crypten.cuda import CUDALongTensor
+from crypten.debug import validation_mode
 from crypten.encoder import FixedPointEncoder
-
-from . import beaver, replicated  # noqa: F401
-
+from . import beaver
 
 SENTINEL = -1
 
@@ -36,13 +34,13 @@ class ArithmeticSharedTensor(object):
 
     # constructors:
     def __init__(
-        self,
-        tensor=None,
-        size=None,
-        broadcast_size=False,
-        precision=None,
-        src=0,
-        device=None,
+            self,
+            tensor=None,
+            size=None,
+            broadcast_size=False,
+            precision=None,
+            src=0,
+            device=None,
     ):
         """
         Creates the shared tensor from the input `tensor` provided by party `src`.
@@ -68,17 +66,17 @@ class ArithmeticSharedTensor(object):
 
         # assertions on inputs:
         assert (
-            isinstance(src, int) and src >= 0 and src < comm.get().get_world_size()
+                isinstance(src, int) and src >= 0 and src < comm.get().get_world_size()
         ), "specified source party does not exist"
         if self.rank == src:
             assert tensor is not None, "source must provide a data tensor"
             if hasattr(tensor, "src"):
                 assert (
-                    tensor.src == src
+                        tensor.src == src
                 ), "source of data tensor must match source of encryption"
         if not broadcast_size:
             assert (
-                tensor is not None or size is not None
+                    tensor is not None or size is not None
             ), "must specify tensor or size, or set broadcast_size"
 
         # if device is unspecified, try and get it from tensor:
@@ -177,6 +175,7 @@ class ArithmeticSharedTensor(object):
         tensor.share = current_share - next_share
         return tensor
 
+
     @staticmethod
     def PRSS(*size, device=None):
         """
@@ -233,7 +232,7 @@ class ArithmeticSharedTensor(object):
         Pads the input tensor with values provided in `value`.
         """
         assert mode == "constant", (
-            "Padding with mode %s is currently unsupported" % mode
+                "Padding with mode %s is currently unsupported" % mode
         )
 
         result = self.shallow_copy()
@@ -249,7 +248,7 @@ class ArithmeticSharedTensor(object):
                 )
         elif isinstance(value, ArithmeticSharedTensor):
             assert (
-                value.dim() == 0
+                    value.dim() == 0
             ), "Private values used for padding must be 0-dimensional"
             value = value.share.item()
             result.share = torch.nn.functional.pad(
@@ -379,10 +378,14 @@ class ArithmeticSharedTensor(object):
                     result.encode_as_(y)
                 result.share = getattr(result.share, op)(y.share)
             else:  # ['mul', 'matmul', 'convNd', 'conv_transposeNd']
-                protocol = globals()[cfg.mpc.protocol]
+                # NOTE: 'mul_' calls 'mul' here
+                # Must copy share.data here to support 'mul_' being inplace
+
+                from crypten.mpc.protocols import ActivateProtocol
                 result.share.set_(
-                    getattr(protocol, op)(result, y, *args, **kwargs).share.data
+                    getattr(ActivateProtocol, op)(result, y, *args, **kwargs).share.data
                 )
+
         else:
             raise TypeError("Cannot %s %s with %s" % (op, type(y), type(self)))
 
@@ -452,23 +455,25 @@ class ArithmeticSharedTensor(object):
             y = y.long()
 
         if isinstance(y, int) or is_int_tensor(y):
-            validate = cfg.debug.validation_mode
-
-            if validate:
+            if validation_mode():
                 tolerance = 1.0
                 tensor = self.get_plain_text()
 
             # Truncate protocol for dividing by public integers:
             if comm.get().get_world_size() > 2:
-                protocol = globals()[cfg.mpc.protocol]
-                protocol.truncate(self, y)
+                wraps = self.wraps()
+                self.share = self.share.div_(y, rounding_mode="trunc")
+                # NOTE: The multiplication here must be split into two parts
+                # to avoid long out-of-bounds when y <= 2 since (2 ** 63) is
+                # larger than the largest long integer.
+                self -= wraps * 4 * (int(2 ** 62) // y)
             else:
                 self.share = self.share.div_(y, rounding_mode="trunc")
 
             # Validate
-            if validate:
+            if validation_mode():
                 if not torch.lt(
-                    torch.abs(self.get_plain_text() * y - tensor), tolerance
+                        torch.abs(self.get_plain_text() * y - tensor), tolerance
                 ).all():
                     raise ValueError("Final result of division is incorrect.")
 
@@ -480,6 +485,10 @@ class ArithmeticSharedTensor(object):
 
         assert is_float_tensor(y), "Unsupported type for div_: %s" % type(y)
         return self.mul_(y.reciprocal())
+
+    def wraps(self):
+        """Privately computes the number of wraparounds for a set a shares"""
+        return beaver.wraps(self)
 
     def matmul(self, y):
         """Perform matrix multiplication using some tensor"""
@@ -595,8 +604,7 @@ class ArithmeticSharedTensor(object):
         return self.clone().neg_()
 
     def square_(self):
-        protocol = globals()[cfg.mpc.protocol]
-        self.share = protocol.square(self).div_(self.encoder.scale).share
+        self.share = beaver.square(self).div_(self.encoder.scale).share
         return self
 
     def square(self):

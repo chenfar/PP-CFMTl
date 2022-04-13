@@ -4,29 +4,56 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import multiprocessing
 
-from .provider import TupleProvider
+import sycret
 
+import crypten.communicator as comm
+import torch
+from crypten.common.rng import generate_kbit_random_tensor, generate_random_ring_element
+from crypten.common.util import count_wraps, torch_stack
+from crypten.mpc.primitives import ArithmeticSharedTensor, BinarySharedTensor
 
-class HomomorphicProvider(TupleProvider):
+N_CORES = multiprocessing.cpu_count()
+dpf = sycret.EqFactory(n_threads=N_CORES)
+dif = sycret.LeFactory(n_threads=N_CORES)
+
+class HomomorphicProvider:
     NAME = "HE"
 
-    def generate_additive_triple(self, size0, size1, op, *args, **kwargs):
+    @staticmethod
+    def generate_additive_triple(size0, size1, op, device=None, *args, **kwargs):
         """Generate multiplicative triples of given sizes"""
-        raise NotImplementedError("HomomorphicProvider not implemented")
 
-    def square(self, size):
+        a = generate_random_ring_element(size0, device=device)
+        b = generate_random_ring_element(size1, device=device)
+
+        c = getattr(torch, op)(a, b, *args, **kwargs)
+
+        a = ArithmeticSharedTensor(a, precision=0, src=0)
+        b = ArithmeticSharedTensor(b, precision=0, src=0)
+        c = ArithmeticSharedTensor(c, precision=0, src=0)
+
+        return a, b, c
+
+
+
+    @staticmethod
+    def square(size):
         """Generate square double of given size"""
         raise NotImplementedError("HomomorphicProvider not implemented")
 
-    def generate_xor_triple(self, size0, size1):
+    @staticmethod
+    def generate_xor_triple(size0, size1):
         """Generate xor triples of given size"""
         raise NotImplementedError("HomomorphicProvider not implemented")
 
-    def wrap_rng(self, size, num_parties):
+    @staticmethod
+    def wrap_rng(size, num_parties):
         """Generate random shared tensor of given size and sharing of its wraps"""
         raise NotImplementedError("HomomorphicProvider not implemented")
 
-    def B2A_rng(self, size):
+    @staticmethod
+    def B2A_rng(size):
         """Generate random bit tensor as arithmetic and binary shared tensors"""
         raise NotImplementedError("HomomorphicProvider not implemented")

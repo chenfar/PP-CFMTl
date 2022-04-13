@@ -4,28 +4,26 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import multiprocessing
 
+import sycret
+import torch.distributed as dist
 import crypten.communicator as comm
 import torch
 from crypten.common.rng import generate_kbit_random_tensor, generate_random_ring_element
 from crypten.common.util import count_wraps, torch_stack
 from crypten.mpc.primitives import ArithmeticSharedTensor, BinarySharedTensor
 
-from .provider import TupleProvider
-
-import multiprocessing
-import sycret
-import torch.distributed as dist
-
 N_CORES = multiprocessing.cpu_count()
 dpf = sycret.EqFactory(n_threads=N_CORES)
 dif = sycret.LeFactory(n_threads=N_CORES)
 
 
-class TrustedFirstParty(TupleProvider):
+class TrustedFirstParty:
     NAME = "TFP"
 
-    def generate_additive_triple(self, size0, size1, op, device=None, *args, **kwargs):
+    @staticmethod
+    def generate_additive_triple(size0, size1, op, device=None, *args, **kwargs):
         """Generate multiplicative triples of given sizes"""
         a = generate_random_ring_element(size0, device=device)
         b = generate_random_ring_element(size1, device=device)
@@ -38,7 +36,8 @@ class TrustedFirstParty(TupleProvider):
 
         return a, b, c
 
-    def square(self, size, device=None):
+    @staticmethod
+    def square(size, device=None):
         """Generate square double of given size"""
         r = generate_random_ring_element(size, device=device)
         r2 = r.mul(r)
@@ -48,7 +47,8 @@ class TrustedFirstParty(TupleProvider):
         stacked = ArithmeticSharedTensor(stacked, precision=0, src=0)
         return stacked[0], stacked[1]
 
-    def generate_binary_triple(self, size0, size1, device=None):
+    @staticmethod
+    def generate_binary_triple(size0, size1, device=None):
         """Generate xor triples of given size"""
         a = generate_kbit_random_tensor(size0, device=device)
         b = generate_kbit_random_tensor(size1, device=device)
@@ -60,7 +60,8 @@ class TrustedFirstParty(TupleProvider):
 
         return a, b, c
 
-    def wrap_rng(self, size, device=None):
+    @staticmethod
+    def wrap_rng(size, device=None):
         """Generate random shared tensor of given size and sharing of its wraps"""
         num_parties = comm.get().get_world_size()
         r = [
@@ -75,7 +76,8 @@ class TrustedFirstParty(TupleProvider):
 
         return r, theta_r
 
-    def B2A_rng(self, size, device=None):
+    @staticmethod
+    def B2A_rng(size, device=None):
         """Generate random bit tensor as arithmetic and binary shared tensors"""
         # generate random bit
         r = generate_kbit_random_tensor(size, bitlength=1, device=device)
@@ -85,7 +87,8 @@ class TrustedFirstParty(TupleProvider):
 
         return rA, rB
 
-    def generate_fss_keys(self, rank, n_values, op):
+    @staticmethod
+    def generate_fss_keys(rank, n_values, op):
         """
             Generate random bit tensor for fss, A pair of keys, one for rank 0, another for rank 1
             rank: rank of process

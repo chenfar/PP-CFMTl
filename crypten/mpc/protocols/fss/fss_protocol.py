@@ -10,6 +10,8 @@ import torch
 
 import crypten
 from crypten.mpc.primitives import ArithmeticSharedTensor
+from crypten.mpc.primitives.beaver import beaver_protocol
+from crypten.mpc.protocols.base_protocol import BaseProtocol
 import torch.distributed as dist
 
 n = 32  # bit precision
@@ -75,7 +77,36 @@ def fss_op(x: ArithmeticSharedTensor, op="eq") -> ArithmeticSharedTensor:
     return result
 
 
-class FSSProtocol:
+class FSSProtocol(BaseProtocol):
+    """
+        此协议只支持两方计算，并且依赖可信第三方（可信第一方的话也不是不行。。。）
+        乘法还是使用三元组
+        比较使用FSS，函数秘密共享，function secret sharing
+    """
+
+    @staticmethod
+    def mul(x, y):
+        return beaver_protocol("mul", x, y)
+
+    @staticmethod
+    def matmul(x, y):
+        return beaver_protocol("matmul", x, y)
+
+    @staticmethod
+    def conv1d(x, y, **kwargs):
+        return beaver_protocol("conv1d", x, y, **kwargs)
+
+    @staticmethod
+    def conv2d(x, y, **kwargs):
+        return beaver_protocol("conv2d", x, y, **kwargs)
+
+    @staticmethod
+    def conv_transpose1d(x, y, **kwargs):
+        return beaver_protocol("conv_transpose1d", x, y, **kwargs)
+
+    @staticmethod
+    def conv_transpose2d(x, y, **kwargs):
+        return beaver_protocol("conv_transpose2d", x, y, **kwargs)
 
     @staticmethod
     def ltz(x):

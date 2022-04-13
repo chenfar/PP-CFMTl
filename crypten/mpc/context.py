@@ -138,7 +138,7 @@ def multiprocess_wrap(func, world_size=2, args=(), **kwargs):
     successful = [process.exitcode == 0 for process in processes]
     if not all(successful):
         logging.error("One of the parties failed. Check past logs")
-        raise RuntimeError("sub process failed")
+        raise RuntimeError('son process failed')
 
     return_values = []
     while not queue.empty():

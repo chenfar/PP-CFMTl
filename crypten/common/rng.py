@@ -29,6 +29,25 @@ def generate_random_ring_element(size, ring_size=(2 ** 64), generator=None, **kw
         return CUDALongTensor(rand_element)
     return rand_element
 
+def generate_random_positive_ring_element(size, ring_size=(2 ** 64), generator=None, **kwargs):
+    """Helper function to generate a random number from positive ring"""
+    if generator is None:
+        device = kwargs.get("device", torch.device("cpu"))
+        device = torch.device("cpu") if device is None else device
+        device = torch.device(device) if isinstance(device, str) else device
+        generator = crypten.generators["local"][device]
+    # TODO (brianknott): Check whether this RNG contains the full range we want.
+    rand_element = torch.randint(
+        0,
+        (ring_size - 1) // 2,
+        size,
+        generator=generator,
+        dtype=torch.long,
+        **kwargs
+    )
+    if rand_element.is_cuda:
+        return CUDALongTensor(rand_element)
+    return rand_element
 
 def generate_kbit_random_tensor(size, bitlength=None, generator=None, **kwargs):
     """Helper function to generate a random k-bit number"""

@@ -154,11 +154,8 @@ class BCEWithLogitsLoss(_Loss):
     The loss can be described as:
 
     .. math::
-        p = \sigma(x)
-
-    .. math::
         \ell(x, y) = mean(L) = mean(\{l_1,\dots,l_N\}^\top), \quad
-        l_n = - \left [ y_n \cdot \log p_n + (1 - y_n) \cdot \log (1 - p_n) \right ],
+        l_n = - \left [ y_n \cdot \log x_n + (1 - y_n) \cdot \log (1 - x_n) \right ],
 
     This is used for measuring the error of a reconstruction in for example an
     auto-encoder. Note that the targets t[i] should be numbers between 0 and 1.
@@ -169,32 +166,21 @@ class BCEWithLogitsLoss(_Loss):
         return x.binary_cross_entropy_with_logits(y, skip_forward=self.skip_forward)
 
 
-class RAPPORLoss(_Loss):
+class RelativeEntropyLoss(_Loss):
     r"""
-    This loss computes the BCEWithLogitsLoss with corrections applied to account
-    for randomized response, where the input `alpha` represents the probability
-    of flipping a label.
+    相对熵(relative entropy),又被称为Kullback-Leibler散度(Kullback-Leibler divergence)或信息散度(information divergence),
+    是两个概率分布(probability distribution)间差异的非对称性度量
 
-    The loss can be described as:
-
-    .. math::
-        p = \sigma(x)
-
-    .. math::
-        r = \alpha * p + (1 - \alpha) * (1 - p)
-
-    .. math::
-        \ell(x, y) = mean(L) = mean(\{l_1,\dots,l_N\}^\top), \quad
-        l_n = - \left [ y_n \cdot \log r_n + (1 - y_n) \cdot \log (1 - r_n) \right ],
-
-    This is used for measuring the error of a reconstruction in for example an
-    auto-encoder. Note that the targets t[i] should be numbers between 0 and 1.
+    ..math::
+        \mathrm{KL}(P \| Q)=\sum P(x) \log \frac{P(x)}{Q(x)} 
+        \mathrm{KL}(P \| Q)=\int P(x) \log \frac{P(x)}{Q(x)} dx
     """
-
-    def __init__(self, alpha, reduction="mean", skip_forward=False):
-        super(RAPPORLoss, self).__init__(reduction=reduction, skip_forward=skip_forward)
-        self.alpha = alpha
 
     def forward(self, x, y):
         assert x.size() == y.size(), "input and target must have the same size"
-        return x.rappor_loss(y, self.alpha, skip_forward=self.skip_forward)
+        log_q = x.log_softmax(dim=1)
+        log_p = y.log_softmax(dim=1)
+        q = x.softmax(dim=1)
+        loss_all = (q * (log_q - log_p)).sum()
+        loss_mean = loss_all / x.shape[0]
+        return loss_mean

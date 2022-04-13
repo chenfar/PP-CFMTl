@@ -1,10 +1,12 @@
-
-import time
-
+import numpy as np
 import torch
 
 import crypten
-from crypten.mpc import run_multiprocess
+from crypten import mpc
+import torch.distributed as dist
+
+from crypten.mpc import multiprocess_wrap
+
 
 def flatten(w_local):
     X = []
@@ -13,17 +15,31 @@ def flatten(w_local):
         for k in w_local[i].keys():
             tmp.append(w_local[i][k].flatten())
         X.append(crypten.cat(tmp))
-    return X
+    return crypten.stack(X)
 
 
-@run_multiprocess(world_size=2)
+def info(msg):
+    if dist.get_rank() == 0:
+        print(msg)
+
+
 def fss_protocol_test2():
-    a = crypten.cryptensor(torch.zeros(1))
-    b = crypten.cryptensor(torch.ones(1))
-    for i in range(10):
-        t = time.time()
-        t3 = (a.gt(b)).get_plain_text()
-        print(time.time() - t)
+    a = crypten.cryptensor(torch.zeros(5, 5))
+    b = crypten.cryptensor(torch.arange(0, 5))
+    c = (b - 3) == 0
+    # b.reshape(5, 1)
+    print(c)
+
 
 if __name__ == '__main__':
-    fss_protocol_test2()
+    torch.set_printoptions(threshold=np.inf)
+    print(torch.zeros(250, 250))
+    # print(torch.zeros(3,2))
+    # mpc.set_activate_protocol("FSS")
+    # multiprocess_wrap(func=fss_protocol_test2)
+    # print(torch.index_select(torch.ones(5, 5), dim=0, index=torch.tensor([2, 3])).sum(dim=0))
+    # a = torch.ones(5, 6)
+    # print(a.zero_().inde)
+    # print(a.nonzero().view(-1).view(-1,1))
+    # b = torch.ones(1,5)*4
+    # print(a.sum(dim=1)[2])

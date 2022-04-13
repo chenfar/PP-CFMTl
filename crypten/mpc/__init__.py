@@ -5,22 +5,27 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from crypten.config import cfg
+import os
+
 from crypten.mpc import primitives  # noqa: F401
-from crypten.mpc import provider
+from crypten.mpc import protocols  # noqa: F401
+from crypten.mpc import provider  # noqa: F40
 
-from .context import run_multiprocess,multiprocess_wrap
-from .mpc import MPCTensor
+from .context import run_multiprocess, multiprocess_wrap
+from .mpc import ConfigManager, MPCConfig, MPCTensor, config
 from .ptype import ptype
-
 
 __all__ = [
     "MPCTensor",
+    "ConfigManager",
+    "MPCConfig",
+    "config",
     "primitives",
+    "protocols",
     "provider",
     "ptype",
     "run_multiprocess",
-    "multiprocess_wrap",
+    "multiprocess_wrap"
 ]
 
 # the different private type attributes of an mpc encrypted tensor
@@ -29,15 +34,51 @@ binary = ptype.binary
 
 # Set provider
 __SUPPORTED_PROVIDERS = {
-    "TFP": provider.TrustedFirstParty(),
-    "TTP": provider.TrustedThirdParty(),
-    "HE": provider.HomomorphicProvider(),
+    "TFP": provider.TrustedFirstParty,
+    "TTP": provider.TrustedThirdParty,
+    "HE": provider.HomomorphicProvider,
 }
+__default_provider = __SUPPORTED_PROVIDERS[
+    os.environ.get("CRYPTEN_PROVIDER_NAME", "TFP")
+]
+
+
+def set_activate_protocol(new_default_protocol):
+    protocols.set_activate_protocol(new_default_protocol)
+    if new_default_protocol == "SPDZ":
+        mpc.config.active_security = True
+    # if new_default_protocol == "SECURENN":
+    #     set_default_provider("TTP")
+    mpc.flush()
+
+
+def get_activate_protocol():
+    return protocols.get_activate_protocol()
+
+
+def set_default_provider(new_default_provider):
+    global __default_provider
+    assert_msg = "Provider %s is not supported" % new_default_provider
+    if isinstance(new_default_provider, str):
+        assert new_default_provider in __SUPPORTED_PROVIDERS.keys(), assert_msg
+        new_default_provider = __SUPPORTED_PROVIDERS[new_default_provider]
+    else:
+        assert new_default_provider in __SUPPORTED_PROVIDERS.values(), assert_msg
+    __default_provider = new_default_provider
+    os.environ["CRYPTEN_PROVIDER_NAME"] = new_default_provider.NAME
+
+
+def set_config(new_config):
+    global config
+    config = new_config
+    import crypten.mpc
+
+    crypten.mpc.mpc.config = new_config
 
 
 def get_default_provider():
-    return __SUPPORTED_PROVIDERS[cfg.mpc.provider]
+    return __default_provider
 
 
 def ttp_required():
-    return cfg.mpc.provider == "TTP"
+    return __default_provider == provider.TrustedThirdParty

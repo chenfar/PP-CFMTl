@@ -13,6 +13,10 @@ from ..ptype import ptype as Ptype
 from . import beaver
 from .arithmetic import ArithmeticSharedTensor
 from .binary import BinarySharedTensor
+import numpy as np
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../../app')))
 
 
 def _A2B(arithmetic_tensor):
@@ -25,6 +29,11 @@ def _A2B(arithmetic_tensor):
                 for i in range(comm.get().get_world_size())
             ]
         )
+        # zouxing: 保存预测中间结果
+        binary_tensor_2d = binary_tensor._tensor.reshape(-1, binary_tensor._tensor.shape[-1]) 
+
+
+        
         binary_tensor = binary_tensor.sum(dim=0)
 
     # if we OOM, try memory-efficient implementation that uses O(P) rounds:
@@ -36,6 +45,7 @@ def _A2B(arithmetic_tensor):
 
     # return the result:
     binary_tensor.encoder = arithmetic_tensor.encoder
+
     return binary_tensor
 
 

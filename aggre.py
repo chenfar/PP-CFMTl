@@ -4,15 +4,17 @@ import torch
 import torch.distributed as dist
 from prox import Prox
 from cluster import *
+from crypten import mpc
 
 
 # @run_multiprocess(world_size=2)
 def Cluster_Init(w_local, args):
+    mpc.set_activate_protocol("FSS")
     rank = dist.get_rank()
     # do on client
     if w_local is None:
-        w_local = torch.load('./w_local.pth')
-    print(len(w_local))
+        w_local = torch.load('./w_local_test.pth')
+
     w_local_enc = encrypt_w(w_local)
     print("encrypt....")
 
@@ -39,6 +41,8 @@ def Cluster_Init(w_local, args):
 # @run_multiprocess(world_size=2)
 def Cluster_FedAvg(w_local, one_hot_share, rel, args):
     rank = dist.get_rank()
+    if w_local is None:
+        w_local = torch.load('./w_local_sub.pth')
     # encrypt
     w_local = encrypt_w(w_local)
 

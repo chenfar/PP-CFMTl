@@ -738,7 +738,7 @@ class AutogradMatMul(AutogradFunction):
     def backward(ctx, grad_output):
         self_, other = ctx.saved_tensors
 
-        # Cache sizes for inverse_broadcast
+        # Cache sizes for invers_broadcast
         self_size = self_.size()
         other_size = other.size()
 
@@ -1003,63 +1003,6 @@ class AutogradCos(AutogradFunction):
     def backward(ctx, grad_output):
         (sin,) = ctx.saved_tensors
         return grad_output.mul(sin.neg_())
-
-
-@register_function("cosine_similarity")
-class AutogradCosineSimilarity(AutogradFunction):
-    @staticmethod
-    def forward(ctx, x1, x2, dim=1, eps=None):
-        assert x1.size() == x2.size(), "cosine_similarity sizes must match"
-
-        # Handle 0-d case
-        zero_dim = x1.dim() == 0
-        if zero_dim:
-            x1 = x1.unsqueeze(0)
-            x2 = x2.unsqueeze(0)
-
-        # Handle 1-d vectors
-        if x1.size(dim) == 1:
-            ctx.save_multiple_for_backward([dim, zero_dim])
-            return x1.mul(x2).sign().squeeze(dim)
-
-        if not isinstance(x2, crypten.CrypTensor):
-            x2 = x1.new(x2)
-
-        xy = crypten.stack([x1, x2], dim=0)  # [x, y]
-        norm_sq = xy.square().sum(dim=(dim + 1))  # [||x||^2, ||y||^2]
-        inv_norms = norm_sq.inv_sqrt()  # [1 / ||x||, 1 / ||y||]
-
-        ctx.save_multiple_for_backward((xy, inv_norms, dim))
-
-        inv_norm = inv_norms.prod(0)  # 1 / ||x||||y||
-        dot = xy.prod(0).sum(dim)  # x . y
-        return dot.mul(inv_norm)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        # Handle 1-d vectors
-        if len(ctx.saved_tensors) == 2:
-            (dim, zero_dim) = ctx.saved_tensors
-            zeros = torch.zeros(grad_output.size()).unsqueeze(dim)
-            result = grad_output.new(zeros, device=grad_output.device)
-            if zero_dim:
-                result = result.squeeze()
-            return result, result.clone()
-
-        xy, inv_norms, dim = ctx.saved_tensors
-
-        dot = xy.prod(0).sum(dim, keepdim=True)
-        inv_norms = inv_norms.unsqueeze(dim + 1)
-        sq_inv_norms = inv_norms.square()
-
-        xy_normalized = xy.mul(sq_inv_norms)
-        yx = xy.roll(1, 0)
-
-        grads = yx.sub(dot.mul(xy_normalized)).mul(inv_norms.prod(0))
-        grads = grads.mul(grad_output.unsqueeze(dim))
-
-        x_grad, y_grad = grads
-        return x_grad, y_grad
 
 
 @register_function("abs")
@@ -1963,64 +1906,12 @@ class AutogradBinaryCrossEntropyWithLogits(AutogradFunction):
         return (sigmoid_out - target).div(target.nelement()).mul_(grad_output)
 
 
-@register_function("rappor_loss")
-class AutogradRAPPORLoss(AutogradFunction):
-    @staticmethod
-    def forward(ctx, logit, target, alpha, skip_forward=False):
-        assert (
-            logit.size() == target.size()
-        ), "Logit and target sizes must match for rappor loss"
-        pred = logit.sigmoid()
-        ctx.mark_non_differentiable(target)
-        if alpha == 0.0:
-            ctx.save_multiple_for_backward([target, pred, None, alpha])
-            pred_normalized = pred
-        else:
-            pred_normalized = alpha * pred + (1 - alpha) * (1 - pred)
-            grad_correction = pred * (1 - pred)
-            grad_correction *= (pred_normalized * (1 - pred_normalized)).reciprocal(
-                input_in_01=True
-            )
-            ctx.save_multiple_for_backward(
-                [target, pred_normalized, grad_correction, alpha]
-            )
-
-        if skip_forward:
-            return pred.new(0)
-
-        log_pos, log_neg = (
-            crypten.stack([pred_normalized, 1.0 - pred_normalized])
-            .log(input_in_01=True)
-            .unbind(dim=0)
-        )
-
-        loss_values = target * log_pos + (1.0 - target) * log_neg
-        return -(loss_values.mean())
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        target, pred_normalized, grad_correction, alpha = ctx.saved_tensors
-
-        if alpha == 0.0:
-            return (pred_normalized - target).div(target.nelement()).mul_(grad_output)
-
-        grad = (pred_normalized - target).div(target.nelement())
-        grad *= 2 * alpha - 1
-        grad *= grad_correction
-        return grad.mul_(grad_output)
-
-
 @register_function("cross_entropy")
 class AutogradCrossEntropy(AutogradFunction):
     @staticmethod
     def forward(ctx, pred, target, skip_forward=False):
         # NOTE: target is assumed to be one-hot vector.
-        assert pred.size() == target.size()
-
-        # Ignore batch dimension
-        dim = 1 if pred.dim() > 1 else 0
-        softmax = pred.softmax(dim)
-
+        softmax = pred.softmax(1)
         ctx.save_multiple_for_backward([softmax, target])
         ctx.mark_non_differentiable(target)
         if skip_forward:

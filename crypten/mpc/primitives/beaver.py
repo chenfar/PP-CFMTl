@@ -9,7 +9,11 @@ import crypten
 import crypten.communicator as comm
 import torch
 from crypten.common.util import count_wraps
-from crypten.config import cfg
+import numpy as np
+from crypten.cuda import CUDALongTensor
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../../app')))
 
 
 class IgnoreEncodings:
@@ -26,6 +30,10 @@ class IgnoreEncodings:
     def __exit__(self, exc_type, exc_value, exc_traceback):
         for i, tensor in enumerate(self.list_of_tensors):
             tensor.encoder._scale = self.encodings_cache[i]
+
+
+def beaver_protocol(op, x, y, *args, **kwargs):
+    return __beaver_protocol(op, x, y, *args, **kwargs)
 
 
 def __beaver_protocol(op, x, y, *args, **kwargs):
@@ -53,8 +61,7 @@ def __beaver_protocol(op, x, y, *args, **kwargs):
     )
 
     from .arithmetic import ArithmeticSharedTensor
-
-    if cfg.mpc.active_security:
+    if crypten.mpc.config.active_security:
         """
         Reference: "Multiparty Computation from Somewhat Homomorphic Encryption"
         Link: https://eprint.iacr.org/2011/535.pdf
@@ -65,7 +72,6 @@ def __beaver_protocol(op, x, y, *args, **kwargs):
 
         t = ArithmeticSharedTensor.PRSS(a.size(), device=x.device)
         t_plain_text = t.get_plain_text()
-
         rho = (t_plain_text * a - f).get_plain_text()
         sigma = (b - g).get_plain_text()
         triples_check = t_plain_text * c - h - sigma * f - rho * g - rho * sigma
@@ -78,10 +84,13 @@ def __beaver_protocol(op, x, y, *args, **kwargs):
     with IgnoreEncodings([a, b, x, y]):
         epsilon, delta = ArithmeticSharedTensor.reveal_batch([x - a, y - b])
 
+    # zouxing: 保存原始c值
+    tmp = c.clone()
     # z = c + (a * delta) + (epsilon * b) + epsilon * delta
     c._tensor += getattr(torch, op)(epsilon, b._tensor, *args, **kwargs)
     c._tensor += getattr(torch, op)(a._tensor, delta, *args, **kwargs)
     c += getattr(torch, op)(epsilon, delta, *args, **kwargs)
+
 
     return c
 
@@ -156,18 +165,6 @@ def wraps(x):
     return theta_x
 
 
-def truncate(x, y):
-    """Protocol to divide an ArithmeticSharedTensor `x` by a constant integer `y`"""
-    wrap_count = wraps(x)
-    x.share = x.share.div_(y, rounding_mode="trunc")
-    # NOTE: The multiplication here must be split into two parts
-    # to avoid long out-of-bounds when y <= 2 since (2 ** 63) is
-    # larger than the largest long integer.
-    correction = wrap_count * 4 * (int(2 ** 62) // y)
-    x.share -= correction.share
-    return x
-
-
 def AND(x, y):
     """
     Performs Beaver protocol for binary secret-shared tensors x and y
@@ -186,8 +183,9 @@ def AND(x, y):
     eps_del = BinarySharedTensor.reveal_batch([x ^ a, y ^ b])
     epsilon = eps_del[0]
     delta = eps_del[1]
+    res = (b & epsilon) ^ (a & delta) ^ (epsilon & delta) ^ c
 
-    return (b & epsilon) ^ (a & delta) ^ (epsilon & delta) ^ c
+    return res
 
 
 def B2A_single_bit(xB):
@@ -205,9 +203,23 @@ def B2A_single_bit(xB):
 
         return ArithmeticSharedTensor(xB._tensor, precision=0, src=0)
 
+
     provider = crypten.mpc.get_default_provider()
     rA, rB = provider.B2A_rng(xB.size(), device=xB.device)
 
     z = (xB ^ rB).reveal()
     rA = rA * (1 - 2 * z) + z
+
     return rA
+
+# zouxing: add to generate 2d array
+def get_2d_array(x):  
+    if torch.is_tensor(x): 
+        x_2d = x.clone() 
+    else: 
+        x_2d = x._tensor.clone() 
+ 
+    if x_2d.cpu().ndim > 2:
+        x_2d = x_2d.cpu().reshape(-1, x_2d.shape[-1]) 
+
+    return np.array(x_2d.cpu())

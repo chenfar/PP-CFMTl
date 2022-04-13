@@ -5,7 +5,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-__version__ = "0.4.0"
+__version__ = "0.1.0"
 
 import builtins
 import copy
@@ -15,7 +15,6 @@ import warnings
 
 import crypten.common  # noqa: F401
 import crypten.communicator as comm
-import crypten.config  # noqa: F401
 import crypten.mpc  # noqa: F401
 import crypten.nn  # noqa: F401
 import crypten.optim  # noqa: F401
@@ -23,9 +22,7 @@ import torch
 
 # other imports:
 from . import debug
-from .config import cfg
 from .cryptensor import CrypTensor
-
 
 # functions controlling autograd:
 no_grad = CrypTensor.no_grad
@@ -41,7 +38,7 @@ generators = {
 }
 
 
-def init(config_file=None, party_name=None, device=None):
+def init(party_name=None, device=None):
     """
     Initialize CrypTen. It will initialize communicator, setup party
     name for file save / load, and setup seeds for Random Number Generatiion.
@@ -55,10 +52,6 @@ def init(config_file=None, party_name=None, device=None):
         device (int, str, torch.device): Specify device for RNG generators on
         GPU. Must be a GPU device.
     """
-    # Load config file
-    if config_file is not None:
-        cfg.load_config(config_file)
-
     # Return and raise warning if initialized
     if comm.is_initialized():
         warnings.warn("CrypTen is already initialized.", RuntimeWarning)
@@ -250,13 +243,13 @@ def _setup_prng():
 
 
 def load_from_party(
-    f=None,
-    preloaded=None,
-    encrypted=False,
-    model_class=None,
-    src=0,
-    load_closure=torch.load,
-    **kwargs,
+        f=None,
+        preloaded=None,
+        encrypted=False,
+        model_class=None,
+        src=0,
+        load_closure=torch.load,
+        **kwargs,
 ):
     """
     Loads an object saved with `torch.save()` or `crypten.save_from_party()`.
@@ -285,13 +278,13 @@ def load_from_party(
     else:
         assert isinstance(src, int), "Load failed: src argument must be an integer"
         assert (
-            src >= 0 and src < comm.get().get_world_size()
+                src >= 0 and src < comm.get().get_world_size()
         ), "Load failed: src must be in [0, world_size)"
 
         # source party
         if comm.get().get_rank() == src:
             assert (f is None and (preloaded is not None)) or (
-                (f is not None) and preloaded is None
+                    (f is not None) and preloaded is None
             ), "Exactly one of f and preloaded must not be None"
 
             if f is None:
@@ -373,7 +366,7 @@ def save_from_party(obj, f, src=0, save_closure=torch.save, **kwargs):
     else:
         assert isinstance(src, int), "Save failed: src must be an integer"
         assert (
-            src >= 0 and src < comm.get().get_world_size()
+                src >= 0 and src < comm.get().get_world_size()
         ), "Save failed: src must be an integer in [0, world_size)"
 
         if comm.get().get_rank() == src:
@@ -542,19 +535,6 @@ def log(*args, in_order=False, dst=0, **kwargs):
     )
 
 
-# TupleProvider tracing functions
-def trace(tracing=True):
-    crypten.mpc.get_default_provider().trace(tracing=tracing)
-
-
-def trace_once():
-    crypten.mpc.get_default_provider().trace_once()
-
-
-def fill_cache():
-    crypten.mpc.get_default_provider().fill_cache()
-
-
 # expose classes and functions in package:
 __all__ = [
     "CrypTensor",
@@ -562,7 +542,6 @@ __all__ = [
     "enable_grad",
     "set_grad_enabled",
     "debug",
-    "fill_cache",
     "generators",
     "init",
     "init_thread",
@@ -570,7 +549,5 @@ __all__ = [
     "mpc",
     "nn",
     "print",
-    "trace",
-    "trace_once",
     "uninit",
 ]

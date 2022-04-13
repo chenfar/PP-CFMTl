@@ -46,12 +46,12 @@ class DistributedCommunicator(Communicator):
             self._name = f"rank{self.rank}"
 
             # logging:
-            logging.info("==================")
             logging.info("DistributedCommunicator with rank %d" % self.rank)
-            logging.info("==================")
-
             # initialize process group:
             total_ws = self.world_size + 1 if init_ttp else self.world_size
+
+            # print(self.rank)
+            # print(total_ws)
             dist.init_process_group(
                 backend=self.distributed_backend,
                 init_method=self.rendezvous,
@@ -275,9 +275,9 @@ class DistributedCommunicator(Communicator):
         if group is None:
             group = self.main_group
 
-        buf = pickle.dumps(obj)
+        buf = pickle.dumps(obj)#序列化对象
         size = torch.tensor(len(buf), dtype=torch.int32)
-        arr = torch.from_numpy(numpy.copy(numpy.frombuffer(buf, dtype=numpy.int8)))
+        arr = torch.from_numpy(numpy.copy(numpy.frombuffer(buf, dtype=numpy.int8)))#将序列化的字节流转换成torch的形式
 
         r0 = dist.isend(size, dst=dst, group=group)
         r1 = dist.isend(arr, dst=dst, group=group)

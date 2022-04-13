@@ -13,7 +13,12 @@ import crypten
 import torch
 import torch.onnx.symbolic_helper as sym_help
 from crypten.common.functions.pooling import _adaptive_pool2d_helper
-
+import numpy as np 
+import crypten.communicator as comm
+from crypten.cuda import CUDALongTensor
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../../app')))
 
 class Module:
     """
@@ -657,7 +662,7 @@ class Graph(Container):
         assert len(args) == len(
             self.input_names
         ), f"Expected {len(self.input_names)} inputs but received {len(args)}."
-
+        # zouxing: 自动化保存python数据
         # keep track of all values that have been computed:
         values = {self.input_names[idx]: args[idx] for idx in range(len(args))}
         computed = {key: False for key in self._graph.keys()}
@@ -704,13 +709,19 @@ class Graph(Container):
         for input_name in self.input_names:
             _mark_as_computed(input_name)
         node_to_compute = _find_computable_node()
+        ignore = ['Transpose encrypted module', 'Parameter encrypted module']
         while node_to_compute is not None:
-
+        
             # compute output of module:
             input = [values[name] for name in self._graph[node_to_compute]]
             if len(input) == 1:
                 input = input[0]  # unpack iterable if possible
             module = self._modules[node_to_compute]
+            # zouxing: 增加保存json
+            if global_config.get_value('is_prediction') and str(module) not in ignore: 
+                global_module.append(node_to_compute + '_' + str(module).split(" ")[0]) 
+                global_config.set_value("cur_module", node_to_compute + '_' + str(module).split(" ")[0])
+                global_config.set_value(node_to_compute + '_' + str(module).split(" ")[0],[])
             output = module(input)
 
             # we may get one output:
@@ -747,18 +758,6 @@ class Graph(Container):
         # this should never happen:
         raise ValueError("nn.Graph.forward() failed. Is graph unconnected?")
 
-    def to_pytorch(self):
-        if not hasattr(self, "pytorch_model"):
-            raise AttributeError("CrypTen Graph detached from PyTorch model.")
-        if self.encrypted:
-            raise ValueError(
-                "CrypTen model must be decrypted before calling to_pytorch()"
-            )
-        with torch.no_grad():
-            for name, param in self.pytorch_model.named_parameters():
-                param.set_(self._modules[name].data)
-        return self.pytorch_model
-
 
 class Sequential(Graph):
     """
@@ -788,69 +787,6 @@ class Sequential(Graph):
                     input_names = [str(idx - 1)]
                 self.add_module(module_name, module, input_names)
                 self.output_names = [module_name]
-
-
-class ModuleList(Module):
-    r"""Holds submodules in a list.
-
-    :class:`~crypten.nn.ModuleList` can be indexed like a regular Python list, but
-    modules it contains are properly registered, and will be visible by all
-    :class:`~crypten.nn.Module` methods.
-
-    Args:
-        modules (iterable, optional): an iterable of modules to add
-
-    Example::
-
-        class MyModule(nn.Module):
-            def __init__(self):
-                super(MyModule, self).__init__()
-                self.linears = nn.ModuleList([nn.Linear(10, 10) for i in range(10)])
-
-            def forward(self, x):
-                # ModuleList can act as an iterable, or be indexed using ints
-                for i, l in enumerate(self.linears):
-                    x = self.linears[i // 2](x) + l(x)
-                return x
-    """
-
-    def __init__(self, modules=None):
-        super(ModuleList, self).__init__()
-        if modules is not None:
-            self += modules
-
-    def __dir__(self):
-        keys = super(ModuleList, self).__dir__()
-        keys = [key for key in keys if not key.isdigit()]
-        return keys
-
-    def __delitem__(self, idx):
-        if isinstance(idx, slice):
-            for k in range(len(self._modules))[idx]:
-                del self._modules[str(k)]
-        else:
-            del self._modules[self._get_abs_string_index(idx)]
-        # To preserve numbering, self._modules is being reconstructed with modules after deletion
-        str_indices = [str(i) for i in range(len(self._modules))]
-        self._modules = OrderedDict(list(zip(str_indices, self._modules.values())))
-
-
-__module_list_func_names = [
-    "_get_abs_string_index",
-    "__getitem__",
-    "__setitem__",
-    "__len__",
-    "__iter__",
-    "__iadd__",
-    "insert",
-    "append",
-    "extend",
-]
-
-
-for func_name in __module_list_func_names:
-    func = getattr(torch.nn.ModuleList, func_name)
-    setattr(ModuleList, func_name, func)
 
 
 class ModuleDict(Module):
@@ -1910,7 +1846,9 @@ class MatMul(Module):
         else:
             assert isinstance(x, (list, tuple)), "input must be list or tuple"
             assert len(x) == 2, "input must contain two tensors"
-            output = x[0].matmul(x[1])
+             
+            output = x[0].matmul(x[1]) 
+
         return output
 
     @staticmethod
@@ -2281,7 +2219,9 @@ class ReLU(Module):
             logging.warning("CrypTen ReLU module does not support inplace computation.")
 
     def forward(self, x):
-        return x.relu()
+        # zouxing: 保存数据到json中
+        k = x.relu()
+        return k
 
     @staticmethod
     def from_onnx(attributes=None):

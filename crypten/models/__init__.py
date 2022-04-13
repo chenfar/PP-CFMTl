@@ -28,7 +28,7 @@ __import_list = {
         "InceptionAux",
     ],
     "mnasnet": ["_InvertedResidual"],
-    "mobilenet": [],
+    "mobilenet": ["InvertedResidual"],
     "resnet": ["BasicBlock", "Bottleneck"],
     "shufflenetv2": ["InvertedResidual"],
     "squeezenet": ["Fire"],

@@ -26,7 +26,7 @@ parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=250)
+parser.add_argument('--num_clients', type=int, default=50)
 parser.add_argument('--clust', type=int, default=50)
 parser.add_argument('--if_clust', type=bool, default=True)
 
@@ -55,6 +55,9 @@ if __name__ == '__main__':
         dict_train, dict_test = mnist_non_iid(dataset_train, dataset_test, args.num_clients, 10, args.ratio)
     else:  # args.iid == 'non-iid-single_class'
         dict_train, dict_test = mnist_non_iid_single_class(dataset_train, dataset_test, args.num_clients, 10)
+
+    torch.save(dict_train, "./dict_train.pth")
+    torch.save(dict_test, "./dict_test.pth")
     Net = Net_mnist
 
     if args.experiment == 'performance-mnist':
@@ -143,7 +146,8 @@ if __name__ == '__main__':
 
                     if iter == 0:
                         if m == 1:  # m = 2的分类和 m = 1是相同的避免重复'
-                            torch.save(w_local, './w_local.pth')
+                            torch.save(w_local, './w_local_test.pth')
+                            exit(1)
                             multiprocess_wrap(Cluster_Init, world_size=2, args=(None, args,))
 
                         groups, w_groups, rel0, one_hot_share0 = torch.load("./rank0.pth")
@@ -153,7 +157,8 @@ if __name__ == '__main__':
                         rel = [rel0, rel1]
 
                     else:
-                        multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(w_local, one_hot_share, rel, args,))
+                        torch.save(w_local, './w_local_sub.pth')
+                        multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(None, one_hot_share, rel, args,))
                         w_groups = torch.load("./w_groups.pth")
 
                     loss_avg = sum(loss_local) / len(loss_local)
