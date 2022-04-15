@@ -60,14 +60,14 @@ def Cluster(group, w_local, args):
                     rel[-1].append(dist)
     return new_groups, new_w_groups, rel
 
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument('--if_clust', type=bool, default=True)
-parser.add_argument('--num_clients', type=int, default=50)
-parser.add_argument('--clust', type=int, default=8)
-parser.add_argument('--dist', type=str, default='L2')
-w_local = torch.load('../w_local_test.pth')
-group = [i for i in range(len(w_local))]
-args = parser.parse_args()
-new_groups, new_w_groups, rel = Cluster(group, w_local, args)
-print(new_groups)
+# import argparse
+# parser = argparse.ArgumentParser()
+# parser.add_argument('--if_clust', type=bool, default=True)
+# parser.add_argument('--num_clients', type=int, default=50)
+# parser.add_argument('--clust', type=int, default=10)
+# parser.add_argument('--dist', type=str, default='L2')
+# w_local = torch.load('../w_local.pth')
+# group = [i for i in range(len(w_local))]
+# args = parser.parse_args()
+# new_groups, new_w_groups, rel = Cluster(group, w_local, args)
+# print(new_groups)

@@ -13,8 +13,8 @@ from crypten.mpc import multiprocess_wrap
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--dataset', type=str, default='mnist')
-parser.add_argument('--iid', type=str, default='non-iid')
-parser.add_argument('--ratio', type=float, default=0.5)
+parser.add_argument('--iid', type=str, default='non-iid')  # non-iid
+parser.add_argument('--ratio', type=float, default=0.25)
 
 parser.add_argument('--method', type=str, default='CFMTL')
 parser.add_argument('--ep', type=int, default=50)
@@ -26,8 +26,8 @@ parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=50)
-parser.add_argument('--clust', type=int, default=50)
+parser.add_argument('--num_clients', type=int, default=60)
+parser.add_argument('--clust', type=int, default=10)
 parser.add_argument('--if_clust', type=bool, default=True)
 
 parser.add_argument('--prox', type=bool, default=True)
@@ -35,11 +35,11 @@ parser.add_argument('--R', type=str, default='L2')
 parser.add_argument('--prox_local_ep', type=int, default=10)
 parser.add_argument('--prox_lr', type=float, default=0.01)
 parser.add_argument('--prox_momentum', type=float, default=0.5)
-parser.add_argument('--L', type=float, default=0.1)
+parser.add_argument('--L', type=float, default=1)
 parser.add_argument('--dist', type=str, default='L2')
 
 parser.add_argument('--experiment', type=str, default='performance-mnist')
-parser.add_argument('--filename', type=str, default='fig')
+
 import multiprocessing as mp
 
 if __name__ == '__main__':
@@ -56,14 +56,12 @@ if __name__ == '__main__':
     else:  # args.iid == 'non-iid-single_class'
         dict_train, dict_test = mnist_non_iid_single_class(dataset_train, dataset_test, args.num_clients, 10)
 
-    torch.save(dict_train, "./dict_train.pth")
-    torch.save(dict_test, "./dict_test.pth")
     Net = Net_mnist
 
     if args.experiment == 'performance-mnist':
         acc_final = [[] for i in range(3)]
         pro_final = [[] for i in range(3)]
-        for m in range(1, 3):
+        for m in range(0, 3):
             if m == 0:
                 args.method = 'FL'
             if m == 1:
@@ -129,8 +127,8 @@ if __name__ == '__main__':
                         group = groups[group_id]
                         if iter > 0:
                             num_clients = max(int(args.frac * len(group)), 1)
-                            if iter == 1:
-                                print(f"group {group_id} select {num_clients}/{len(group)} client")
+                            # if iter == 1:
+                            #     print(f"group {group_id} select {num_clients}/{len(group)} client")
                             clients = np.random.choice(group, num_clients, replace=False)
                             group = clients
                         w_group = w_groups[group_id]
@@ -139,26 +137,20 @@ if __name__ == '__main__':
                             w_local[id] = w  # 添加到server端
                             loss_local.append(loss)
 
-                    print("client update w_locals, begin to do aggregation")
+                    # print("client update w_locals, begin to do aggregation")
                     # torch.save(w_local, "./w_local.pth")
                     # w_local = torch.load("./w_local.pth")
                     # exit()
 
                     if iter == 0:
-                        if m == 1:  # m = 2的分类和 m = 1是相同的避免重复'
-                            torch.save(w_local, './w_local_test.pth')
-                            exit(1)
-                            multiprocess_wrap(Cluster_Init, world_size=2, args=(None, args,))
+                        torch.save(w_local, './w_local.pth')
+                        multiprocess_wrap(Cluster_Init, world_size=2, args=(args,))
 
-                        groups, w_groups, rel0, one_hot_share0 = torch.load("./rank0.pth")
-                        rel1, one_hot_share1 = torch.load("./rank1.pth")
-
-                        one_hot_share = [one_hot_share0, one_hot_share1]
-                        rel = [rel0, rel1]
+                        groups, w_groups, _, _ = torch.load("./rank0.pth")
 
                     else:
                         torch.save(w_local, './w_local_sub.pth')
-                        multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(None, one_hot_share, rel, args,))
+                        multiprocess_wrap(Cluster_FedAvg, world_size=2, args=(args,))
                         w_groups = torch.load("./w_groups.pth")
 
                     loss_avg = sum(loss_local) / len(loss_local)
@@ -191,4 +183,10 @@ if __name__ == '__main__':
         record.append(copy.deepcopy(pro_final))
         record = np.array(record)
         print(record)
-        np.save('{}.npy'.format(args.filename), record)
+        if args.iid == "iid":
+            filename = f'experiments/{args.experiment}-iid-secure.npy'
+        else:
+            filename = f'experiments/{args.experiment}-noniid-{args.ratio}-secure.npy'
+        np.save(filename, record)
+
+# python

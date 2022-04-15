@@ -1,27 +1,27 @@
 from collections import OrderedDict
+import warnings
 
-import torch
-import torch.distributed as dist
+warnings.filterwarnings("ignore")
 from prox import Prox
 from cluster import *
 from crypten import mpc
 
 
 # @run_multiprocess(world_size=2)
-def Cluster_Init(w_local, args):
+def Cluster_Init(args):
     mpc.set_activate_protocol("FSS")
     rank = dist.get_rank()
     # do on client
-    if w_local is None:
-        w_local = torch.load('./w_local_test.pth')
-
+    w_local = torch.load('./w_local.pth')
+    info(f"num of data {len(w_local)}")
     w_local_enc = encrypt_w(w_local)
-    print("encrypt....")
+
+    info("encrypt....")
 
     # do on server
     new_groups, one_hot, rel = simulation_clusters(w_local_enc, args)
     new_w_groups = cluster_avg_w(one_hot, w_local_enc)
-    print("cluster over....")
+    info("cluster over....")
 
     if args.prox:
         new_w_groups = Prox(new_w_groups, args, rel)
@@ -39,15 +39,19 @@ def Cluster_Init(w_local, args):
 
 
 # @run_multiprocess(world_size=2)
-def Cluster_FedAvg(w_local, one_hot_share, rel, args):
+def Cluster_FedAvg(args):
     rank = dist.get_rank()
-    if w_local is None:
-        w_local = torch.load('./w_local_sub.pth')
+
+    if rank == 0:
+        _, _, rel, one_hot = torch.load("./rank0.pth")
+    else:
+        rel, one_hot = torch.load("./rank1.pth")
+
+    w_local = torch.load('./w_local_sub.pth')
+
     # encrypt
     w_local = encrypt_w(w_local)
 
-    one_hot = one_hot_share[rank]
-    rel = rel[rank]
     # do on server
     new_w_groups = cluster_avg_w(one_hot, w_local)
     if args.prox:
@@ -98,17 +102,36 @@ def cluster_avg_w(one_hot, W):
     num_g = one_hot.size()[1]
     num_c = len(W)
     mix_w_groups = [[] for _ in range(num_g)]
-    num_c_per_group = [0 for _ in range(num_g)]
+    num_c_per_group = crypten.cryptensor(torch.zeros(num_g, dtype=torch.int))
+
+    size_dict = dict()
+
     for c in range(num_c):
         if W[c] is None:
             continue
-        for g in range(num_g):
-            mix_w = OrderedDict()  # create a new state_dict
-            c_in_g_code = one_hot[c][g]
-            num_c_per_group[g] += c_in_g_code
+        if num_g >= 20:
+            if len(size_dict) == 0:
+                for k in W[c].keys():
+                    size_dict[k] = [num_g] + [1 for _ in range(len(W[c][k].size()))]
+
+            c_one_hot = one_hot[c]
+            num_c_per_group += c_one_hot
+            mix_ws = [OrderedDict() for _ in range(num_g)]
             for k in W[c].keys():
-                mix_w[k] = W[c][k] * c_in_g_code
-            mix_w_groups[g].append(mix_w)
+                k_c_one_hot = c_one_hot.reshape(size_dict[k])
+                k_mix_w = k_c_one_hot * W[c][k]
+                for g in range(num_g):
+                    mix_ws[g][k] = k_mix_w[g]
+            for g in range(num_g):
+                mix_w_groups[g].append(mix_ws[g])
+        else:
+            for g in range(num_g):
+                mix_w = OrderedDict()  # create a new state_dict
+                c_in_g_code = one_hot[c][g]
+                num_c_per_group[g] += c_in_g_code
+                for k in W[c].keys():
+                    mix_w[k] = W[c][k] * c_in_g_code
+                mix_w_groups[g].append(mix_w)
 
     new_w_groups = []
     for g in range(num_g):

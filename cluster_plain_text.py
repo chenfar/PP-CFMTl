@@ -179,8 +179,3 @@ def getName(i, j):
     t = [i, j]
     t.sort()
     return str(t[0]) + '-' + str(t[1])
-
-
-distance = torch.randn((250, 250))
-# ward_linkage_method(distance.tolist())
-ward_linkage_method2(distance.tolist())

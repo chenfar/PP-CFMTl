@@ -14,8 +14,8 @@ import copy
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--dataset', type=str, default='mnist')
-parser.add_argument('--iid', type=str, default='non-iid')
-parser.add_argument('--ratio', type=float, default=0.5)
+parser.add_argument('--iid', type=str, default='iid')
+parser.add_argument('--ratio', type=float, default=0.25)
 
 parser.add_argument('--method', type=str, default='CFMTL')
 parser.add_argument('--ep', type=int, default=50)
@@ -27,16 +27,16 @@ parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=20)
-parser.add_argument('--clust', type=int, default=5)
+parser.add_argument('--num_clients', type=int, default=250)
+parser.add_argument('--clust', type=int, default=50)
 parser.add_argument('--if_clust', type=bool, default=True)
 
 parser.add_argument('--prox', type=bool, default=False)
 parser.add_argument('--R', type=str, default='L2')
 parser.add_argument('--prox_local_ep', type=int, default=10)
-parser.add_argument('--prox_lr', type=float, default=0.01)
+parser.add_argument('--prox_lr', type=float, default=0.1)
 parser.add_argument('--prox_momentum', type=float, default=0.5)
-parser.add_argument('--L', type=float, default=0.1)
+parser.add_argument('--L', type=float, default=1.0)
 parser.add_argument('--dist', type=str, default='L2')
 
 parser.add_argument('--experiment', type=str, default='performance-mnist')
@@ -84,7 +84,6 @@ if __name__ == '__main__':
                 args.method = 'CFMTL'
                 args.prox = True
                 args.if_clust = True
-            
             if args.method == 'FL':
                 loss_train = []
                 pro_train = pro_final[m]

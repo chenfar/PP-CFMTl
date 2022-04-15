@@ -71,10 +71,10 @@ def L2_Prox(w_groups, args, rel):
         opt = torch.optim.SGD(net.parameters(), lr=args.prox_lr, momentum=args.prox_momentum)
         for iter in range(args.prox_local_ep):
             loss = L2(old_params[:i]+old_params[i+1:], old_params[i], net.parameters(), args, rel[i])
-            if iter == 0 :
-                loss_start = copy.deepcopy(loss.item())
-            if iter == args.prox_local_ep-1:
-                loss_end = copy.deepcopy(loss.item())
+            # if iter == 0 :
+            #     loss_start = copy.deepcopy(loss.item())
+            # if iter == args.prox_local_ep-1:
+            #     loss_end = copy.deepcopy(loss.item())
                 #percent = (loss_end - loss_start) / loss_start * 100
                 #print("Percent: {:.2f}%".format(percent))
             opt.zero_grad()

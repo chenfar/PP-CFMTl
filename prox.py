@@ -1,3 +1,6 @@
+import copy
+import time
+
 from model import *
 import crypten
 
@@ -62,7 +65,6 @@ def L2_Prox(w_groups, args, rel):
         w = w_groups[i]
         net = Net().encrypt()
         net.load_state_dict(w, strict=False)
-
         opt = crypten.optim.SGD(net.parameters(), lr=args.prox_lr, momentum=args.prox_momentum)
         for iter in range(args.prox_local_ep):
             loss = L2(old_params[:i] + old_params[i + 1:], old_params[i], net.parameters(), args, rel[i])
@@ -75,6 +77,7 @@ def L2_Prox(w_groups, args, rel):
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
+
         w_new.append(net.state_dict())
 
     return w_new

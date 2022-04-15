@@ -24,19 +24,16 @@ def info(msg):
 
 
 def fss_protocol_test2():
-    a = crypten.cryptensor(torch.zeros(5, 5))
-    b = crypten.cryptensor(torch.arange(0, 5))
-    c = (b - 3) == 0
-    # b.reshape(5, 1)
-    print(c)
+
+    crypten.cryptensor(a)
 
 
 if __name__ == '__main__':
-    torch.set_printoptions(threshold=np.inf)
-    print(torch.zeros(250, 250))
+    # torch.set_printoptions(threshold=np.inf)
+    # print(torch.zeros(250, 250))
     # print(torch.zeros(3,2))
     # mpc.set_activate_protocol("FSS")
-    # multiprocess_wrap(func=fss_protocol_test2)
+    multiprocess_wrap(func=fss_protocol_test2)
     # print(torch.index_select(torch.ones(5, 5), dim=0, index=torch.tensor([2, 3])).sum(dim=0))
     # a = torch.ones(5, 6)
     # print(a.zero_().inde)
