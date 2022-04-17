@@ -12,12 +12,12 @@ from crypten.mpc import multiprocess_wrap
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--dataset', type=str, default='mnist')
-parser.add_argument('--iid', type=str, default='non-iid')  # non-iid
+parser.add_argument('--dataset', type=str, default='cifar')
+parser.add_argument('--iid', type=str, default='iid')  # non-iid
 parser.add_argument('--ratio', type=float, default=0.25)
 
 parser.add_argument('--method', type=str, default='CFMTL')
-parser.add_argument('--ep', type=int, default=50)
+parser.add_argument('--ep', type=int, default=100)
 parser.add_argument('--local_ep', type=int, default=1)
 parser.add_argument('--frac', type=float, default=0.2)
 parser.add_argument('--num_batch', type=int, default=10)
@@ -26,7 +26,7 @@ parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=60)
+parser.add_argument('--num_clients', type=int, default=50)
 parser.add_argument('--clust', type=int, default=10)
 parser.add_argument('--if_clust', type=bool, default=True)
 
@@ -38,30 +38,58 @@ parser.add_argument('--prox_momentum', type=float, default=0.5)
 parser.add_argument('--L', type=float, default=1)
 parser.add_argument('--dist', type=str, default='L2')
 
-parser.add_argument('--experiment', type=str, default='performance-mnist')
+parser.add_argument('--experiment', type=str, default='performance-cifar')
 
 import multiprocessing as mp
+
+
+def save_result():
+    record = []
+    record.append(copy.deepcopy(acc_final))
+    record.append(copy.deepcopy(pro_final))
+    record = np.array(record)
+    print(record)
+    if args.iid == "iid":
+        filename = f'experiments/{args.experiment}-iid-secure.npy'
+    elif args.iid == "non-iid":
+        filename = f'experiments/{args.experiment}-noniid-{args.ratio}-secure.npy'
+    else:  # non-iid-single_class
+        filename = f'experiments/{args.experiment}-non-iid-single_class-secure.npy'
+    np.save(filename, record)
+
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     args = parser.parse_args()
 
-    trans_mnist = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-    dataset_train = datasets.MNIST('./data/mnist/', train=True, download=True, transform=trans_mnist)
-    dataset_test = datasets.MNIST('./data/mnist/', train=False, download=True, transform=trans_mnist)
-    if args.iid == 'iid':
-        dict_train, dict_test = mnist_iid(dataset_train, dataset_test, args.num_clients, 10)
-    elif args.iid == 'non-iid':
-        dict_train, dict_test = mnist_non_iid(dataset_train, dataset_test, args.num_clients, 10, args.ratio)
-    else:  # args.iid == 'non-iid-single_class'
-        dict_train, dict_test = mnist_non_iid_single_class(dataset_train, dataset_test, args.num_clients, 10)
+    if args.dataset == 'mnist':
+        trans_mnist = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+        dataset_train = datasets.MNIST('./data/mnist/', train=True, download=True, transform=trans_mnist)
+        dataset_test = datasets.MNIST('./data/mnist/', train=False, download=True, transform=trans_mnist)
+        if args.iid == 'iid':
+            dict_train, dict_test = mnist_iid(dataset_train, dataset_test, args.num_clients, 10)
+        elif args.iid == 'non-iid':
+            dict_train, dict_test = mnist_non_iid(dataset_train, dataset_test, args.num_clients, 10, args.ratio)
+        else:  # args.iid == 'non-iid-single_class'
+            dict_train, dict_test = mnist_non_iid_single_class(dataset_train, dataset_test, args.num_clients, 10)
+        Net = Net_mnist
+    else:  # args.dataset == 'cifar'
+        trans_cifar = transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        dataset_train = datasets.CIFAR10('./data/cifar/', train=True, download=True, transform=trans_cifar)
+        dataset_test = datasets.CIFAR10('./data/cifar/', train=False, download=True, transform=trans_cifar)
+        if args.iid == 'iid':
+            dict_train, dict_test = cifar_iid(dataset_train, dataset_test, args.num_clients, 10)
+        elif args.iid == 'non-iid':
+            dict_train, dict_test = cifar_non_iid(dataset_train, dataset_test, args.num_clients, 10, args.ratio)
+        else:  # args.iid == 'non-iid-single_class':
+            dict_train, dict_test = cifar_non_iid_single_class(dataset_train, dataset_test, args.num_clients, 10)
+        Net = Net_cifar
 
-    Net = Net_mnist
-
-    if args.experiment == 'performance-mnist':
+    if args.experiment == 'performance-mnist' or args.experiment == 'performance-cifar':
         acc_final = [[] for i in range(3)]
         pro_final = [[] for i in range(3)]
-        for m in range(0, 3):
+        for m in range(2, 3):
             if m == 0:
                 args.method = 'FL'
             if m == 1:
@@ -127,8 +155,6 @@ if __name__ == '__main__':
                         group = groups[group_id]
                         if iter > 0:
                             num_clients = max(int(args.frac * len(group)), 1)
-                            # if iter == 1:
-                            #     print(f"group {group_id} select {num_clients}/{len(group)} client")
                             clients = np.random.choice(group, num_clients, replace=False)
                             group = clients
                         w_group = w_groups[group_id]
@@ -137,15 +163,10 @@ if __name__ == '__main__':
                             w_local[id] = w  # 添加到server端
                             loss_local.append(loss)
 
-                    # print("client update w_locals, begin to do aggregation")
-                    # torch.save(w_local, "./w_local.pth")
-                    # w_local = torch.load("./w_local.pth")
-                    # exit()
-
                     if iter == 0:
                         torch.save(w_local, './w_local.pth')
                         multiprocess_wrap(Cluster_Init, world_size=2, args=(args,))
-
+                        exit(1)
                         groups, w_groups, _, _ = torch.load("./rank0.pth")
 
                     else:
@@ -178,15 +199,7 @@ if __name__ == '__main__':
                             acc_client_num_95 += 1
                     pro_train.append(acc_client_num_95 / args.num_clients * 100)
                     print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
-        record = []
-        record.append(copy.deepcopy(acc_final))
-        record.append(copy.deepcopy(pro_final))
-        record = np.array(record)
-        print(record)
-        if args.iid == "iid":
-            filename = f'experiments/{args.experiment}-iid-secure.npy'
-        else:
-            filename = f'experiments/{args.experiment}-noniid-{args.ratio}-secure.npy'
-        np.save(filename, record)
+
+            save_result()
 
 # python

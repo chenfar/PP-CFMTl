@@ -89,9 +89,8 @@ if __name__ == '__main__':
         return rel, new_w_groups
 
 
-    def prox_test(args):
-        rel, new_w_groups = cluster_avg_w_test()
-        info("begin to prox")
+    def prox_test():
+        new_w_groups, args, rel = torch.load(f"./rank{dist.get_rank()}-prox.pth")
         Prox(new_w_groups, args, rel)
 
 
@@ -99,4 +98,4 @@ if __name__ == '__main__':
     from aggre import Cluster_Init
 
     # multiprocess_wrap(Cluster_Init, args=(None, args))
-    multiprocess_wrap(prox_test, args=(args,))
+    multiprocess_wrap(prox_test, args=())

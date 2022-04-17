@@ -4,13 +4,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 
+from matplotlib.ticker import MultipleLocator
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--experiment', type=str, default='performance-mnist')
 parser.add_argument('--filename', type=str, default='fig-mnist-iid')
 
-markersize = 8
+markersize = 6
 markevery = 2
+linestyle = '-.'
 color_set = {"red": "#f4433c", "green": "#0aa858", "blue": "#2d85f0", "yellow": "#ffbc32"}
 
 
@@ -25,8 +28,9 @@ def draw_picture(args, record, filename):
         y2_2 = record[1][2]
 
         plt.figure(figsize=(6.4, 12.8))
+
         plt.subplot(2, 1, 1)
-        plt.grid(linestyle='-.')
+        plt.grid(linestyle=linestyle)
         plt.plot(x_0, y1_0, '-', marker='o', markevery=markevery, mec=color_set['red'], mfc='w', label='FedAvg',
                  color=color_set['red'], markersize=markersize)
         plt.plot(x_1, y1_1, '-', marker='s', markevery=markevery, mec=color_set["yellow"], mfc='w', label='CFL',
@@ -35,9 +39,11 @@ def draw_picture(args, record, filename):
                  color=color_set["blue"], markersize=markersize)
         plt.ylabel('accuracy', fontsize=20)
         plt.ylim(80, 100)
+        ax = plt.gca()
+        ax.yaxis.set_major_locator(MultipleLocator(2))
 
         plt.subplot(2, 1, 2)
-        plt.grid(linestyle='-.')
+        plt.grid(linestyle=linestyle)
         plt.plot(x_0, y2_0, '-', marker='o', markevery=markevery, mec=color_set['red'], mfc='w', label='FedAvg',
                  color=color_set['red'], markersize=markersize)
         plt.plot(x_1, y2_1, '-', marker='s', markevery=markevery, mec=color_set["yellow"], mfc='w', label='CFL',
@@ -46,9 +52,12 @@ def draw_picture(args, record, filename):
                  color=color_set["blue"], markersize=markersize)
         plt.ylabel('proportion', fontsize=20)
         plt.ylim(0, 100)
-        plt.xlabel('round', fontsize=20)
+        ax = plt.gca()
+        ax.yaxis.set_major_locator(MultipleLocator(10))
 
+        plt.xlabel('round', fontsize=20)
         plt.legend(fontsize=20)
+
         print(y1_0[-1])
         print(y1_1[-1])
         print(y1_2[-1])
@@ -173,21 +182,23 @@ def draw_picture(args, record, filename):
         print(y2_2[-1])
         print(y2_3[-1])
 
-    plt.savefig('./experiments/{}.eps'.format(filename))
-    plt.savefig('./experiments/{}.pdf'.format(filename))
+    # plt.savefig('./experiments/eps/{}.eps'.format(filename))
+    # plt.savefig('./experiments/pdf/{}.pdf'.format(filename))
     plt.show()
 
 
 if __name__ == '__main__':
     files = os.listdir("./experiments")
     args = parser.parse_args()
-    for file_name in files:
-        if file_name.endswith(".npy"):
-            record = np.load("./experiments/{}".format(file_name))
-            record = record.tolist()
-            split_name = file_name.split("-")
-            args.experiment = split_name[0]
-            if args.experiment == "performance":
-                args.experiment += "-" + split_name[1]
-            print(args.experiment)
-            draw_picture(args, record, file_name.split(".")[0])
+    record = np.load("./experiments/performance-cifar-iid-secure.npy").tolist()
+    print(record)
+    # for file_name in files:
+    #     if file_name.endswith(".npy"):
+    #         record = np.load("./experiments/{}".format(file_name))
+    #         record = record.tolist()
+    #         split_name = file_name.split("-")
+    #         args.experiment = split_name[0]
+    #         if args.experiment == "performance":
+    #             args.experiment += "-" + split_name[1]
+    #         print(file_name[:-4])
+    #         draw_picture(args, record, file_name[:-4])

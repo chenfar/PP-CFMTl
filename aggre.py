@@ -1,6 +1,8 @@
 from collections import OrderedDict
 import warnings
 
+import torch
+
 warnings.filterwarnings("ignore")
 from prox import Prox
 from cluster import *
@@ -24,6 +26,8 @@ def Cluster_Init(args):
     info("cluster over....")
 
     if args.prox:
+        # torch.save((new_w_groups, args, rel), f"./rank{rank}-prox.pth")
+        # exit(1)
         new_w_groups = Prox(new_w_groups, args, rel)
 
     # do on client
