@@ -1,7 +1,7 @@
 import torch
 
 from CFMTL.data import *
-from CFMTL.local import Local_Update
+from CFMTL.local import Local_Update, Local_Update2
 from CFMTL.test import Test
 from CFMTL.model import *
 import argparse
@@ -57,7 +57,8 @@ def save_result():
         filename = f'experiments/{args.experiment}-non-iid-single_class-secure.npy'
     np.save(filename, record)
 
-
+# Clustered Secure Sparse Aggregation for Federated Learning with Non-IID Data
+# Secure Sparse Aggregation with hierarchical clustering for Federated Learning on Non-IID Data
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     args = parser.parse_args()
@@ -106,6 +107,7 @@ if __name__ == '__main__':
                 pro_train = pro_final[m]
                 acc_train = acc_final[m]
                 w_global = Net().state_dict()
+
                 for iter in range(args.ep):
                     w_local = []
                     loss_local = []
