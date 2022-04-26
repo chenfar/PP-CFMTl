@@ -37,6 +37,8 @@ def fss_op(x: ArithmeticSharedTensor, op="eq") -> ArithmeticSharedTensor:
     """
     # TODO: if input x is cuda tensor, should do something.
     device = x.device
+    if str(device) != "cpu":
+        x = x.clone().cpu()
     rank = dist.get_rank()
     origin_shape = x.share.shape
     n_values = origin_shape.numel()

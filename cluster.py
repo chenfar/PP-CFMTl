@@ -274,12 +274,15 @@ def _build_rel(X, args, finalcluster):
         if args.dist == 'L2':
             distance = (X_groups - X_groups[i]).norm(dim=1)
             distance = (-1 * distance).exp()
-        elif args.dist == 'Equal':
+        if args.dist == 'Equal':
             distance = torch.ones(len(finalcluster)) * 0.5
-        else:
-            distance = (X_groups - X_groups[i]).square().sqrt().sum(dim=1)
+        if args.dist == "L1":
+            distance = (X_groups - X_groups[i]).abs().sum(dim=1)
             distance = (-1 * distance).exp()
-
+        if args.dist == "cos":
+            X_norm = X_groups.norm(dim=1)
+            Xi_norm = X_norm[i]
+            distance = 1 - (X_groups * X_groups[i]).sum(dim=1) / (X_norm * Xi_norm)
         tmp = []
         for j in range(len(finalcluster)):
             if i != j:

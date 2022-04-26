@@ -5,7 +5,6 @@
 # print(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../')))
 import crypten
 from crypten.mpc.ptype import ptype as Ptype
-from encryption import paillier, encryption
 from functools import reduce
 import numpy as np
 import random
@@ -17,7 +16,6 @@ import torch
 from crypten.mpc.primitives.arithmetic import ArithmeticSharedTensor
 from crypten.mpc.primitives.binary import BinarySharedTensor
 from crypten.mpc.primitives.converters import convert
-from crypten.config import cfg
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -25,9 +23,9 @@ warnings.filterwarnings("ignore")
 
 @run_multiprocess(world_size=2)
 def shuffling():
-    client = 3
+    client = 4
     labels = crypten.cryptensor(torch.tensor(torch.arange(0, client), dtype=torch.int64))
-    ttext =  crypten.cryptensor(torch.tensor([[1,2,3,4,5,6],[2,3,4,5,6,7],[3,4,5,6,7,8]], dtype=torch.int64))
+    ttext =  crypten.cryptensor(torch.tensor([[1,2,3,4,5,6],[2,3,4,5,6,7],[3,4,5,6,7,8],[3,4,5,6,7,8]], dtype=torch.int64))
 
     rank = comm.get().get_rank()
  
@@ -40,8 +38,9 @@ def shuffling():
     c1 = zeros.clone()
     c2 = zeros.clone()
 
-    np.random.seed((rank + 1) * 10)
-    shuffling =  np.random.permutation(client)
+    np.random.seed(int(time.time())+rank)
+    shuffling = np.random.permutation(client)
+    print("shuffling:", shuffling)
     all_tensor = []
 
     for item in shuffling:
@@ -68,6 +67,7 @@ def shuffling():
         result = convert(k1, Ptype.arithmetic, bits=1)
         one_hots = one_hots + result
 
+    print(one_hots.get_plain_text())
     shufflingout = labels @ one_hots
     shufflingover = one_hots @ ttext 
     print("shuffling label", shufflingout.get_plain_text())

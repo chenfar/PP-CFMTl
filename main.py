@@ -1,3 +1,5 @@
+import os
+
 import torch
 
 from CFMTL.data import *
@@ -12,57 +14,61 @@ from crypten.mpc import multiprocess_wrap
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--dataset', type=str, default='cifar')
+parser.add_argument('--dataset', type=str, default='mnist')
 parser.add_argument('--iid', type=str, default='iid')  # non-iid
 parser.add_argument('--ratio', type=float, default=0.25)
 
 parser.add_argument('--method', type=str, default='CFMTL')
-parser.add_argument('--ep', type=int, default=100)
-parser.add_argument('--local_ep', type=int, default=1)
+parser.add_argument('--ep', type=int, default=2)
+parser.add_argument('--local_ep', type=int, default=2)
 parser.add_argument('--frac', type=float, default=0.2)
-parser.add_argument('--num_batch', type=int, default=10)
+parser.add_argument('--num_batch', type=int, default=64)
 
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--decay', type=float, default=0)
 parser.add_argument('--momentum', type=float, default=0.5)
 
-parser.add_argument('--num_clients', type=int, default=50)
-parser.add_argument('--clust', type=int, default=10)
+parser.add_argument('--num_clients', type=int, default=200)
+parser.add_argument('--clust', type=int, default=20)
 parser.add_argument('--if_clust', type=bool, default=True)
 
 parser.add_argument('--prox', type=bool, default=True)
 parser.add_argument('--R', type=str, default='L2')
-parser.add_argument('--prox_local_ep', type=int, default=10)
+parser.add_argument('--prox_local_ep', type=int, default=5)
 parser.add_argument('--prox_lr', type=float, default=0.01)
 parser.add_argument('--prox_momentum', type=float, default=0.5)
 parser.add_argument('--L', type=float, default=1)
 parser.add_argument('--dist', type=str, default='L2')
 
-parser.add_argument('--experiment', type=str, default='performance-cifar')
+parser.add_argument('--experiment', type=str, default='performance-mnist')
 
 import multiprocessing as mp
 
 
 def save_result():
-    record = []
-    record.append(copy.deepcopy(acc_final))
-    record.append(copy.deepcopy(pro_final))
-    record = np.array(record)
-    print(record)
     if args.iid == "iid":
         filename = f'experiments/{args.experiment}-iid-secure.npy'
     elif args.iid == "non-iid":
         filename = f'experiments/{args.experiment}-noniid-{args.ratio}-secure.npy'
     else:  # non-iid-single_class
         filename = f'experiments/{args.experiment}-non-iid-single_class-secure.npy'
+
+    if os.path.exists(filename):
+        record = np.load(filename, allow_pickle=True).tolist()
+        record[0][m] = copy.deepcopy(acc_final[m])
+        record[1][m] = copy.deepcopy(pro_final[m])
+    else:
+        record = [copy.deepcopy(acc_final), copy.deepcopy(pro_final)]
+    record = np.array(record)
     np.save(filename, record)
 
-# Clustered Secure Sparse Aggregation for Federated Learning with Non-IID Data
+
+# Clustered Secure Sparse Aggregation for Federated Learning on Non-IID Data
 # Secure Sparse Aggregation with hierarchical clustering for Federated Learning on Non-IID Data
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     args = parser.parse_args()
-
+    print(args)
     if args.dataset == 'mnist':
         trans_mnist = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
         dataset_train = datasets.MNIST('./data/mnist/', train=True, download=True, transform=trans_mnist)
@@ -90,7 +96,7 @@ if __name__ == '__main__':
     if args.experiment == 'performance-mnist' or args.experiment == 'performance-cifar':
         acc_final = [[] for i in range(3)]
         pro_final = [[] for i in range(3)]
-        for m in range(2, 3):
+        for m in range(0, 3):
             if m == 0:
                 args.method = 'FL'
             if m == 1:
@@ -131,13 +137,14 @@ if __name__ == '__main__':
                         acc_test.append(acc)
                     acc_avg = sum(acc_test) / len(acc_test)
                     print("Testing accuracy: {:.2f}".format(acc_avg))
-                    acc_train.append(acc_avg)
-                    acc_client_num_95 = 0
-                    for acc_client in acc_test:
-                        if acc_client >= 95:
-                            acc_client_num_95 += 1
-                    pro_train.append(acc_client_num_95 / args.num_clients * 100)
-                    print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
+                    acc_train.append(acc_avg.item())
+                    if args.experiment == 'performance-mnist':
+                        acc_client_num_95 = 0
+                        for acc_client in acc_test:
+                            if acc_client >= 95:
+                                acc_client_num_95 += 1
+                        pro_train.append(acc_client_num_95 / args.num_clients * 100)
+                        print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
 
             if args.method == 'CFMTL':
                 groups = [[i for i in range(args.num_clients)]]
@@ -168,7 +175,6 @@ if __name__ == '__main__':
                     if iter == 0:
                         torch.save(w_local, './w_local.pth')
                         multiprocess_wrap(Cluster_Init, world_size=2, args=(args,))
-                        exit(1)
                         groups, w_groups, _, _ = torch.load("./rank0.pth")
 
                     else:
@@ -194,14 +200,15 @@ if __name__ == '__main__':
                             acc_test.append(acc)
                     acc_avg = sum(acc_test) / len(acc_test)
                     print("Testing accuracy: {:.2f}".format(acc_avg))
-                    acc_train.append(acc_avg)
-                    acc_client_num_95 = 0
-                    for acc_client in acc_test:
-                        if acc_client >= 95:
-                            acc_client_num_95 += 1
-                    pro_train.append(acc_client_num_95 / args.num_clients * 100)
-                    print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
+                    acc_train.append(acc_avg.item())
 
+                    if args.experiment == 'performance-mnist':
+                        acc_client_num_95 = 0
+                        for acc_client in acc_test:
+                            if acc_client >= 95:
+                                acc_client_num_95 += 1
+                        pro_train.append(acc_client_num_95 / args.num_clients * 100)
+                        print("Testing proportion: {:.1f}".format(acc_client_num_95 / args.num_clients * 100))
             save_result()
 
 # python

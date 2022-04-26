@@ -130,3 +130,9 @@ dmypy.json
 
 # idea
 .idea
+
+# other
+prox_better.py
+*.npy
+*.pdf
+*.eps

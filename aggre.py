@@ -4,7 +4,7 @@ import warnings
 import torch
 
 warnings.filterwarnings("ignore")
-from prox import Prox
+from prox_better import Prox
 from cluster import *
 from crypten import mpc
 
